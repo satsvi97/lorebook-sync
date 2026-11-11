@@ -9,7 +9,7 @@ import { extension_settings, getContext } from '../../../extensions.js';
 import { getRequestHeaders, eventSource, event_types } from '../../../../script.js';
 
 const MODULE_NAME = 'lorebook-sync';
-const EXT_VERSION = '0.5.0';
+const EXT_VERSION = '0.5.1';
 
 console.info('Lorebook Sync v' + EXT_VERSION + ' loaded');
 const NOTION_API = 'https://api.notion.com/v1';
@@ -32,8 +32,143 @@ const CAT_LABELS = {
     chats: 'Чаты',
 };
 
+const LANGS = ['ru', 'en', 'uk', 'sv'];
+
+const I18N = {
+    ru: {
+        desc: 'Синхронизация данных SillyTavern в базы Notion.',
+        show: 'Show',
+        hide: 'Hide',
+        test: 'Проверить связь',
+        syncAll: 'Синхронизировать всё',
+        create: 'Создать недостающие базы',
+        parentLabel: 'ID страницы Notion для новых баз (необязательно)',
+        parentPlaceholder: 'page id',
+        databases: 'Базы Notion',
+        lorebooks: '📚 Лорбуки',
+        characters: '🎭 Персонажи',
+        personas: '🧑 Персоны',
+        chats: '💬 Чаты',
+        includeEmpty: 'включать пустые лорбуки',
+        chatLimit: 'чатов на персонажа',
+        msgLimit: 'сообщений в чате',
+        rewriteChats: 'перезаписывать чаты целиком',
+        autoTitle: '🤖 Авто-синхронизация',
+        autoEnable: 'авто-синхронизация активного чата',
+        autoEvery: 'каждые N сообщений',
+        dbPlaceholder: 'database id',
+    },
+    en: {
+        desc: 'Sync SillyTavern data to Notion databases.',
+        show: 'Show',
+        hide: 'Hide',
+        test: 'Test connection',
+        syncAll: 'Sync all',
+        create: 'Create missing databases',
+        parentLabel: 'Notion page ID for new databases (optional)',
+        parentPlaceholder: 'page id',
+        databases: 'Notion databases',
+        lorebooks: '📚 Lorebooks',
+        characters: '🎭 Characters',
+        personas: '🧑 Personas',
+        chats: '💬 Chats',
+        includeEmpty: 'include empty lorebooks',
+        chatLimit: 'chats per character',
+        msgLimit: 'messages per chat',
+        rewriteChats: 'rewrite chats fully',
+        autoTitle: '🤖 Auto-sync',
+        autoEnable: 'auto-sync the active chat',
+        autoEvery: 'every N messages',
+        dbPlaceholder: 'database id',
+    },
+    uk: {
+        desc: 'Синхронізація даних SillyTavern у бази Notion.',
+        show: 'Show',
+        hide: 'Hide',
+        test: 'Перевірити звʼязок',
+        syncAll: 'Синхронізувати все',
+        create: 'Створити відсутні бази',
+        parentLabel: 'ID сторінки Notion для нових баз (необовʼязково)',
+        parentPlaceholder: 'page id',
+        databases: 'Бази Notion',
+        lorebooks: '📚 Лорбуки',
+        characters: '🎭 Персонажі',
+        personas: '🧑 Персони',
+        chats: '💬 Чати',
+        includeEmpty: 'включати порожні лорбуки',
+        chatLimit: 'чатів на персонажа',
+        msgLimit: 'повідомлень у чаті',
+        rewriteChats: 'перезаписувати чати повністю',
+        autoTitle: '🤖 Автосинхронізація',
+        autoEnable: 'автосинхронізація активного чату',
+        autoEvery: 'кожні N повідомлень',
+        dbPlaceholder: 'database id',
+    },
+    sv: {
+        desc: 'Synkronisera SillyTavern-data till Notion-databaser.',
+        show: 'Show',
+        hide: 'Hide',
+        test: 'Testa anslutning',
+        syncAll: 'Synka allt',
+        create: 'Skapa saknade databaser',
+        parentLabel: 'Notion-sid-ID för nya databaser (valfritt)',
+        parentPlaceholder: 'page id',
+        databases: 'Notion-databaser',
+        lorebooks: '📚 Lorebooks',
+        characters: '🎭 Karaktärer',
+        personas: '🧑 Personer',
+        chats: '💬 Chattar',
+        includeEmpty: 'inkludera tomma lorebooks',
+        chatLimit: 'chattar per karaktär',
+        msgLimit: 'meddelanden per chatt',
+        rewriteChats: 'skriv över chattar helt',
+        autoTitle: '🤖 Autosynk',
+        autoEnable: 'autosynka den aktiva chatten',
+        autoEvery: 'var N:e meddelande',
+        dbPlaceholder: 'database id',
+    },
+};
+
+function t(key) {
+    const lang = getSettings().lang || 'ru';
+    const dict = I18N[lang] || I18N.ru;
+    if (dict && dict[key] != null) {
+        return dict[key];
+    }
+    return I18N.ru[key] != null ? I18N.ru[key] : key;
+}
+
+function applyLanguage() {
+    jQuery('.lorebook-sync-settings [data-ls-i18n]').each(function () {
+        const key = jQuery(this).attr('data-ls-i18n');
+        if (key) {
+            jQuery(this).text(t(key));
+        }
+    });
+
+    jQuery('.lorebook-sync-settings [data-ls-i18n-placeholder]').each(function () {
+        const key = jQuery(this).attr('data-ls-i18n-placeholder');
+        if (key) {
+            jQuery(this).attr('placeholder', t(key));
+        }
+    });
+
+    const lang = getSettings().lang || 'ru';
+    jQuery('.lorebook-sync-settings .ls-lang')
+        .removeClass('active')
+        .filter('[data-ls-lang="' + lang + '"]')
+        .addClass('active');
+
+    const tokenField = jQuery('#ls_token');
+    const toggle = jQuery('#ls_toggle_token');
+    if (tokenField.length && toggle.length) {
+        toggle.text(tokenField.attr('type') === 'text' ? t('hide') : t('show'));
+    }
+}
+
 const defaultSettings = Object.freeze({
     enabled: true,
+    lang: 'ru',
     token: '',
     lorebooksDb: DEFAULT_DATABASE_ID,
     charactersDb: '',
@@ -1188,7 +1323,7 @@ function bindUi() {
         const field = jQuery('#ls_token');
         const hidden = field.attr('type') === 'password';
         field.attr('type', hidden ? 'text' : 'password');
-        jQuery(this).text(hidden ? 'Hide' : 'Show');
+        jQuery(this).text(hidden ? t('hide') : t('show'));
     });
 
     for (const category of Object.keys(DB_KEYS)) {
@@ -1243,6 +1378,14 @@ function bindUi() {
     jQuery('#ls_create_dbs').on('click', createMissingDatabases);
 
     jQuery('#ls_version').text('v' + EXT_VERSION);
+
+    jQuery('.lorebook-sync-settings .ls-lang').on('click', function () {
+        settings.lang = String(jQuery(this).attr('data-ls-lang') || 'ru');
+        applyLanguage();
+        persist();
+    });
+
+    applyLanguage();
 
     jQuery('#ls_parent_page')
         .val(settings.parentPageId)

@@ -21,8 +21,46 @@
     margin-top: 6px;
 }
 
-.lorebook-sync-settings .ls-version {
+.lorebook-sync-settings .ls-right {
     margin-left: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 3px;
+}
+
+.lorebook-sync-settings .ls-langs {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.lorebook-sync-settings .ls-lang {
+    padding: 1px 7px;
+    border-radius: 999px;
+    font-size: 9px;
+    line-height: 1.5;
+    letter-spacing: 0.08em;
+    opacity: 0.6;
+    cursor: pointer;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    text-align: center;
+    user-select: none;
+}
+
+.lorebook-sync-settings .ls-lang:hover {
+    opacity: 1;
+}
+
+.lorebook-sync-settings .ls-lang.active {
+    opacity: 1;
+    background: rgba(180, 170, 255, 0.25);
+    border-color: rgba(180, 170, 255, 0.7);
+}
+
+.lorebook-sync-settings .ls-version {
+    margin-left: 0;
     padding: 1px 6px;
     border-radius: 999px;
     background: rgba(255, 255, 255, 0.06);
