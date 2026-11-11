@@ -9,7 +9,7 @@ import { extension_settings, getContext } from '../../../extensions.js';
 import { getRequestHeaders } from '../../../../script.js';
 
 const MODULE_NAME = 'lorebook-sync';
-const EXT_VERSION = '0.3.4';
+const EXT_VERSION = '0.3.5';
 
 console.info('Lorebook Sync v' + EXT_VERSION + ' loaded');
 const NOTION_API = 'https://api.notion.com/v1';
@@ -120,6 +120,7 @@ function setBusy(busy) {
     jQuery('.ls-sync-btn, #ls_test, #ls_sync_all, #ls_create_dbs')
         .toggleClass('disabled', busy)
         .attr('aria-disabled', busy ? 'true' : 'false');
+    jQuery('#ls_spinner').toggleClass('visible', busy);
 }
 
 /* ------------------------------------------------------------------ */
@@ -665,34 +666,43 @@ async function syncAll() {
     }
 
     setBusy(true);
+    setStatus('▶ Синхронизация всех категорий: старт (' + categories.length + ')', 'info');
+    setStatus('⏳ Это может занять несколько минут — не закрывайте вкладку.', 'muted');
+
     let totalOk = 0;
     let totalFailed = 0;
 
-    for (const category of categories) {
-        setProgress('Синхронизация: ' + CAT_LABELS[category] + '...');
-        setStatus('▶ ' + CAT_LABELS[category] + ': старт', 'info');
-        try {
-            const result = await SYNC_FUNCTIONS[category]();
-            totalOk += result.ok;
-            totalFailed += result.failed;
-            setStatus(
-                CAT_LABELS[category] + ': готово — ' + result.ok + ' ok, ' + result.failed + ' ошибок',
-                result.failed > 0 ? 'error' : 'ok',
-            );
-        } catch (err) {
-            totalFailed++;
-            setStatus(CAT_LABELS[category] + ': ошибка — ' + err.message, 'error');
+    try {
+        for (const category of categories) {
+            setProgress('Синхронизация: ' + CAT_LABELS[category] + '...');
+            setStatus('▶ ' + CAT_LABELS[category] + ': старт (база ' + shortId(settings[DB_KEYS[category]]) + ')', 'info');
+            try {
+                const result = await SYNC_FUNCTIONS[category]();
+                totalOk += result.ok;
+                totalFailed += result.failed;
+                setStatus(
+                    CAT_LABELS[category] + ': готово — ' + result.ok + ' ok, ' + result.failed + ' ошибок',
+                    result.failed > 0 ? 'error' : 'ok',
+                );
+            } catch (err) {
+                totalFailed++;
+                setStatus(CAT_LABELS[category] + ': ошибка — ' + err.message, 'error');
+            }
         }
-    }
 
-    settings.lastSync = new Date().toISOString();
-    persist();
-    setProgress('');
-    setBusy(false);
-    setStatus(
-        'Всё готово — ' + totalOk + ' страниц, ' + totalFailed + ' ошибок.',
-        totalFailed > 0 ? 'error' : 'ok',
-    );
+        settings.lastSync = new Date().toISOString();
+        persist();
+        setStatus(
+            'Всё готово — ' + totalOk + ' страниц, ' + totalFailed + ' ошибок.',
+            totalFailed > 0 ? 'error' : 'ok',
+        );
+    } catch (err) {
+        setStatus('Синхронизация прервана: ' + err.message, 'error');
+    } finally {
+        setProgress('');
+        setBusy(false);
+        setStatus('⏹ Синхронизация завершена, кнопки снова активны.', 'muted');
+    }
 }
 
 async function testConnection() {

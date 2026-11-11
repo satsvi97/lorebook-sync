@@ -117,3 +117,23 @@
 .lorebook-sync-settings .ls-error { color: #ff7b7b; }
 .lorebook-sync-settings .ls-info { color: #9fb8ff; }
 .lorebook-sync-settings .ls-muted { color: #999999; }
+
+.lorebook-sync-settings .ls-spinner {
+    display: none;
+    margin-left: 2px;
+    font-size: 14px;
+    line-height: 1;
+    color: #b8b8ff;
+    transform-origin: 50% 50%;
+    animation: ls-spin 1.4s linear infinite;
+    text-shadow: 0 0 6px rgba(180, 170, 255, 0.6);
+}
+
+.lorebook-sync-settings .ls-spinner.visible {
+    display: inline-block;
+}
+
+@keyframes ls-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
