@@ -9,7 +9,7 @@ import { extension_settings, getContext } from '../../../extensions.js';
 import { getRequestHeaders } from '../../../../script.js';
 
 const MODULE_NAME = 'lorebook-sync';
-const EXT_VERSION = '0.3.2';
+const EXT_VERSION = '0.3.3';
 
 console.info('Lorebook Sync v' + EXT_VERSION + ' loaded');
 const NOTION_API = 'https://api.notion.com/v1';
@@ -106,6 +106,9 @@ function setStatus(text, kind) {
         .addClass('ls-line ls-' + (kind || 'info'))
         .text('[' + timestamp() + '] ' + text);
     area.append(line);
+    while (area[0].childElementCount > 300) {
+        area[0].firstElementChild.remove();
+    }
     area.scrollTop(area[0].scrollHeight);
 }
 
@@ -801,6 +804,7 @@ async function createMissingDatabases() {
 
     setBusy(true);
     setProgress('Создаю базы Notion...');
+    setStatus('▶ Создать недостающие базы: старт', 'info');
 
     try {
         for (const category of missing) {
@@ -845,6 +849,45 @@ async function createMissingDatabases() {
         setProgress('');
         setBusy(false);
     }
+}
+
+let autoFillDone = false;
+
+async function autoFillMissingDatabases() {
+    if (autoFillDone) {
+        return;
+    }
+    autoFillDone = true;
+
+    const settings = getSettings();
+    if (!settings.token) {
+        return;
+    }
+
+    const missing = Object.keys(DB_KEYS).filter(function (category) {
+        return !settings[DB_KEYS[category]];
+    });
+    if (!missing.length) {
+        return;
+    }
+
+    for (const category of missing) {
+        try {
+            const existing = await findDatabaseByTitle(DB_TITLES[category]);
+            if (existing) {
+                settings[DB_KEYS[category]] = existing.id;
+                setDbField(category, existing.id);
+                setStatus('Автопоиск: ' + CAT_LABELS[category] + ' → ' + shortId(existing.id), 'info');
+            } else {
+                setStatus('Автопоиск: ' + CAT_LABELS[category] + ' не найдена — нажмите «Создать недостающие базы»', 'muted');
+            }
+        } catch (err) {
+            setStatus('Автопоиск ' + CAT_LABELS[category] + ': ' + err.message, 'error');
+            return;
+        }
+    }
+
+    persist();
 }
 
 /* ------------------------------------------------------------------ */
@@ -934,6 +977,7 @@ jQuery(async function () {
         bindUi();
         setStatus('Lorebook Sync v' + EXT_VERSION + ': готов', 'muted');
         console.log('Lorebook Sync: ready v' + EXT_VERSION);
+        autoFillMissingDatabases();
     } catch (err) {
         console.error('Lorebook Sync: failed to render settings', err);
     }

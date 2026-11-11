@@ -95,8 +95,11 @@
 }
 
 .lorebook-sync-settings .ls-log {
-    max-height: 180px;
+    max-height: 110px;
+    min-height: 0;
     overflow-y: auto;
+    overscroll-behavior: contain;
+    resize: vertical;
     margin-top: 8px;
     padding: 6px 8px;
     border-radius: 6px;
