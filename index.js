@@ -9,7 +9,7 @@ import { extension_settings, getContext } from '../../../extensions.js';
 import { getRequestHeaders } from '../../../../script.js';
 
 const MODULE_NAME = 'lorebook-sync';
-const EXT_VERSION = '0.3.3';
+const EXT_VERSION = '0.3.4';
 
 console.info('Lorebook Sync v' + EXT_VERSION + ' loaded');
 const NOTION_API = 'https://api.notion.com/v1';
@@ -810,9 +810,9 @@ async function createMissingDatabases() {
         for (const category of missing) {
             const existing = await findDatabaseByTitle(DB_TITLES[category]);
             if (existing) {
-                settings[DB_KEYS[category]] = existing.id;
-                setDbField(category, existing.id);
-                setStatus('= ' + DB_TITLES[category] + ': найдена готовая (' + shortId(existing.id) + ')', 'info');
+                settings[DB_KEYS[category]] = existing;
+                setDbField(category, existing);
+                setStatus('= ' + DB_TITLES[category] + ': найдена готовая (' + shortId(existing) + ')', 'info');
                 continue;
             }
 
@@ -875,9 +875,9 @@ async function autoFillMissingDatabases() {
         try {
             const existing = await findDatabaseByTitle(DB_TITLES[category]);
             if (existing) {
-                settings[DB_KEYS[category]] = existing.id;
-                setDbField(category, existing.id);
-                setStatus('Автопоиск: ' + CAT_LABELS[category] + ' → ' + shortId(existing.id), 'info');
+                settings[DB_KEYS[category]] = existing;
+                setDbField(category, existing);
+                setStatus('Автопоиск: ' + CAT_LABELS[category] + ' → ' + shortId(existing), 'info');
             } else {
                 setStatus('Автопоиск: ' + CAT_LABELS[category] + ' не найдена — нажмите «Создать недостающие базы»', 'muted');
             }
