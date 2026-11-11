@@ -115,28 +115,40 @@ async function notionRequest(path, options) {
         headers['Content-Type'] = 'application/json';
     }
 
-    const response = await fetch(NOTION_API + path, {
-        method: opts.method || 'GET',
-        headers,
-        body: opts.body ? JSON.stringify(opts.body) : undefined,
-    });
+    // Notion allows roughly 3 requests per second; retry politely on 429.
+    for (let attempt = 0; ; attempt++) {
+        const response = await fetch(NOTION_API + path, {
+            method: opts.method || 'GET',
+            headers,
+            body: opts.body ? JSON.stringify(opts.body) : undefined,
+        });
 
-    const text = await response.text();
-    let data = {};
-    if (text) {
-        try {
-            data = JSON.parse(text);
-        } catch (err) {
-            data = { message: text };
+        if (response.status === 429 && attempt < 4) {
+            const retryAfter = Number(response.headers.get('retry-after') || '1');
+            const wait = Math.min(30000, Math.max(700, retryAfter * 1000));
+            await new Promise(function (resolve) {
+                setTimeout(resolve, wait);
+            });
+            continue;
         }
-    }
 
-    if (!response.ok) {
-        const message = (data && data.message) ? data.message : ('Notion HTTP ' + response.status);
-        throw new Error(message);
-    }
+        const text = await response.text();
+        let data = {};
+        if (text) {
+            try {
+                data = JSON.parse(text);
+            } catch (err) {
+                data = { message: text };
+            }
+        }
 
-    return data;
+        if (!response.ok) {
+            const message = (data && data.message) ? data.message : ('Notion HTTP ' + response.status);
+            throw new Error(message);
+        }
+
+        return data;
+    }
 }
 
 const titlePropertyCache = {};
