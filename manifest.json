@@ -1,0 +1,13 @@
+{
+  "display_name": "Lorebook Sync",
+  "loading_order": 100,
+  "requires": [],
+  "optional": [],
+  "dependencies": [],
+  "js": "index.js",
+  "css": "style.css",
+  "author": "Selena",
+  "version": "0.1.0",
+  "homePage": "https://github.com/satsvi97/lorebook-sync",
+  "auto_update": false
+}
