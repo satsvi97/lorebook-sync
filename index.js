@@ -1,8 +1,8 @@
 /**
  * Lorebook Sync — SillyTavern extension
- * Synchronizes world info (lorebooks) with a Notion database.
+ * Syncs lorebooks, characters, personas and chats to Notion databases.
  *
- * v0.1: one-way sync ST -> Notion. Characters and personas come later.
+ * v0.2: four independent categories, each with its own Notion database.
  */
 
 import { extension_settings, getContext } from '../../../extensions.js';
@@ -15,11 +15,30 @@ const NOTION_VERSION = '2022-06-28';
 // Database the author uses for testing. Users can change it in settings.
 const DEFAULT_DATABASE_ID = '4154bb5f-cb35-807f-ad57-ed82105923bc';
 
+const DB_KEYS = {
+    lorebooks: 'lorebooksDb',
+    characters: 'charactersDb',
+    personas: 'personasDb',
+    chats: 'chatsDb',
+};
+
+const CAT_LABELS = {
+    lorebooks: 'Лорбуки',
+    characters: 'Персонажи',
+    personas: 'Персоны',
+    chats: 'Чаты',
+};
+
 const defaultSettings = Object.freeze({
     enabled: true,
     token: '',
-    databaseId: DEFAULT_DATABASE_ID,
+    lorebooksDb: DEFAULT_DATABASE_ID,
+    charactersDb: '',
+    personasDb: '',
+    chatsDb: '',
     includeEmpty: false,
+    chatLimit: 5,
+    msgLimit: 300,
     lastSync: '',
 });
 
@@ -27,12 +46,20 @@ function getSettings() {
     if (!extension_settings[MODULE_NAME]) {
         extension_settings[MODULE_NAME] = structuredClone(defaultSettings);
     }
+    const settings = extension_settings[MODULE_NAME];
     for (const key of Object.keys(defaultSettings)) {
-        if (!Object.hasOwn(extension_settings[MODULE_NAME], key)) {
-            extension_settings[MODULE_NAME][key] = defaultSettings[key];
+        if (!Object.hasOwn(settings, key)) {
+            settings[key] = defaultSettings[key];
         }
     }
-    return extension_settings[MODULE_NAME];
+    // Migrate the single-database config from v0.1.
+    if (settings.databaseId) {
+        if (!settings.lorebooksDb) {
+            settings.lorebooksDb = settings.databaseId;
+        }
+        delete settings.databaseId;
+    }
+    return settings;
 }
 
 function persist() {
@@ -48,7 +75,7 @@ function timestamp() {
 }
 
 function setStatus(text, kind) {
-    const area = jQuery('#lorebook_sync_log');
+    const area = jQuery('#ls_log');
     if (!area.length) {
         console.log('Lorebook Sync:', text);
         return;
@@ -61,12 +88,13 @@ function setStatus(text, kind) {
 }
 
 function setProgress(text) {
-    jQuery('#lorebook_sync_progress').text(text || '');
+    jQuery('#ls_progress').text(text || '');
 }
 
 function setBusy(busy) {
-    jQuery('#lorebook_sync_sync').toggleClass('disabled', busy).attr('aria-disabled', busy ? 'true' : 'false');
-    jQuery('#lorebook_sync_test').toggleClass('disabled', busy).attr('aria-disabled', busy ? 'true' : 'false');
+    jQuery('.ls-sync-btn, #ls_test, #ls_sync_all')
+        .toggleClass('disabled', busy)
+        .attr('aria-disabled', busy ? 'true' : 'false');
 }
 
 /* ------------------------------------------------------------------ */
@@ -111,6 +139,22 @@ async function notionRequest(path, options) {
     return data;
 }
 
+const titlePropertyCache = {};
+
+async function getTitleProperty(databaseId) {
+    if (titlePropertyCache[databaseId]) {
+        return titlePropertyCache[databaseId];
+    }
+    const db = await notionRequest('/databases/' + databaseId);
+    const properties = db.properties || {};
+    const found = Object.keys(properties).find(function (name) {
+        return properties[name].type === 'title';
+    });
+    const result = found || 'Name';
+    titlePropertyCache[databaseId] = result;
+    return result;
+}
+
 function richText(content) {
     const value = String(content == null ? '' : content);
     const parts = [];
@@ -125,6 +169,14 @@ function richText(content) {
     return parts;
 }
 
+function headingBlock(text) {
+    return {
+        object: 'block',
+        type: 'heading_3',
+        heading_3: { rich_text: richText(String(text).slice(0, 1900)) },
+    };
+}
+
 function paragraphBlock(text, italic) {
     return {
         object: 'block',
@@ -137,39 +189,6 @@ function paragraphBlock(text, italic) {
             }],
         },
     };
-}
-
-/**
- * Turn a world info "entries" object into Notion blocks.
- */
-function entryBlocks(entries) {
-    const blocks = [];
-    for (const uid of Object.keys(entries)) {
-        const entry = entries[uid] || {};
-        const primaryKeys = [entry.key, entry.keysecondary].filter(Boolean).join(', ');
-        const label = (entry.comment && String(entry.comment).trim()) || primaryKeys || ('Entry ' + uid);
-        const heading = primaryKeys && entry.comment ? (label + ' — ' + primaryKeys) : label;
-
-        blocks.push({
-            object: 'block',
-            type: 'heading_3',
-            heading_3: { rich_text: richText(heading.slice(0, 1900)) },
-        });
-
-        const content = (entry.content || '').trim();
-        if (content) {
-            blocks.push(paragraphBlock(content, false));
-        }
-
-        const flags = [];
-        if (entry.disable) flags.push('disabled');
-        if (entry.constant) flags.push('constant');
-        if (entry.vectorized) flags.push('vectorized');
-        if (flags.length) {
-            blocks.push(paragraphBlock('[' + flags.join(', ') + ']', true));
-        }
-    }
-    return blocks;
 }
 
 async function appendBlocks(pageId, blocks) {
@@ -211,20 +230,50 @@ async function clearPage(pageId) {
     }
 }
 
-async function findPageByTitle(title) {
-    const settings = getSettings();
-    const data = await notionRequest('/databases/' + settings.databaseId + '/query', {
+async function findPageByTitle(databaseId, title) {
+    const property = await getTitleProperty(databaseId);
+    const data = await notionRequest('/databases/' + databaseId + '/query', {
         method: 'POST',
         body: {
-            filter: { property: 'Name', title: { equals: title } },
+            filter: { property: property, title: { equals: title } },
             page_size: 1,
         },
     });
     return (data.results && data.results[0]) || null;
 }
 
+/**
+ * Create the page if missing, otherwise rewrite its content.
+ */
+async function upsertPage(databaseId, title, blocks) {
+    const property = await getTitleProperty(databaseId);
+    let pageId;
+
+    const existing = await findPageByTitle(databaseId, title);
+    if (existing) {
+        pageId = existing.id;
+        await clearPage(pageId);
+    } else {
+        const properties = {};
+        properties[property] = {
+            title: [{ type: 'text', text: { content: title.slice(0, 1900) } }],
+        };
+        const created = await notionRequest('/pages', {
+            method: 'POST',
+            body: {
+                parent: { database_id: databaseId },
+                properties,
+            },
+        });
+        pageId = created.id;
+    }
+
+    await appendBlocks(pageId, blocks);
+    return pageId;
+}
+
 /* ------------------------------------------------------------------ */
-/* SillyTavern API                                                     */
+/* SillyTavern sources                                                 */
 /* ------------------------------------------------------------------ */
 
 async function listLorebooks() {
@@ -252,9 +301,362 @@ async function readLorebook(name) {
     return await response.json();
 }
 
+async function listCharacterChats(character) {
+    const response = await fetch('/api/characters/chats', {
+        method: 'POST',
+        headers: getRequestHeaders(),
+        body: JSON.stringify({ avatar_url: character.avatar, simple: true }),
+    });
+    if (!response.ok) {
+        return [];
+    }
+    const data = await response.json();
+    return Array.isArray(data) ? data : [];
+}
+
+async function readChat(character, file) {
+    const response = await fetch('/api/chats/get', {
+        method: 'POST',
+        headers: getRequestHeaders(),
+        body: JSON.stringify({
+            ch_name: character.name,
+            file_name: file.file_id,
+            avatar_url: character.avatar,
+        }),
+    });
+    if (!response.ok) {
+        return [];
+    }
+    const data = await response.json();
+    return Array.isArray(data) ? data : [];
+}
+
 /* ------------------------------------------------------------------ */
-/* Sync logic                                                          */
+/* Block builders                                                      */
 /* ------------------------------------------------------------------ */
+
+function entryBlocks(entries) {
+    const blocks = [];
+    for (const uid of Object.keys(entries)) {
+        const entry = entries[uid] || {};
+        const primaryKeys = [entry.key, entry.keysecondary].filter(Boolean).join(', ');
+        const label = (entry.comment && String(entry.comment).trim()) || primaryKeys || ('Entry ' + uid);
+        const heading = primaryKeys && entry.comment ? (label + ' — ' + primaryKeys) : label;
+
+        blocks.push(headingBlock(heading));
+
+        const content = (entry.content || '').trim();
+        if (content) {
+            blocks.push(paragraphBlock(content, false));
+        }
+
+        const flags = [];
+        if (entry.disable) flags.push('disabled');
+        if (entry.constant) flags.push('constant');
+        if (entry.vectorized) flags.push('vectorized');
+        if (flags.length) {
+            blocks.push(paragraphBlock('[' + flags.join(', ') + ']', true));
+        }
+    }
+    return blocks;
+}
+
+function characterBlocks(character) {
+    const blocks = [];
+    const sections = [
+        ['Описание', character.description],
+        ['Личность', character.personality],
+        ['Сценарий', character.scenario],
+        ['Первое сообщение', character.first_mes],
+        ['Примеры диалога', character.mes_example],
+        ['Заметки автора', character.creator_notes],
+        ['Системный промпт', character.system_prompt],
+        ['Пост-инструкции', character.post_history_instructions],
+    ];
+
+    for (const pair of sections) {
+        const value = (pair[1] || '').trim();
+        if (!value) {
+            continue;
+        }
+        blocks.push(headingBlock(pair[0]));
+        blocks.push(paragraphBlock(value, false));
+    }
+
+    const greetings = Array.isArray(character.alternate_greetings)
+        ? character.alternate_greetings.filter(Boolean)
+        : [];
+    if (greetings.length) {
+        blocks.push(headingBlock('Альтернативные приветствия (' + greetings.length + ')'));
+        greetings.forEach(function (greeting, index) {
+            blocks.push(paragraphBlock((index + 1) + '. ' + greeting, false));
+        });
+    }
+
+    if (Array.isArray(character.tags) && character.tags.length) {
+        blocks.push(paragraphBlock('Теги: ' + character.tags.join(', '), true));
+    }
+    if (character.avatar) {
+        blocks.push(paragraphBlock('Аватар: ' + character.avatar, true));
+    }
+
+    return blocks;
+}
+
+function personaBlocks(avatar, name, description) {
+    const blocks = [];
+    const info = description || {};
+    if (info.title) {
+        blocks.push(paragraphBlock('Заголовок: ' + info.title, true));
+    }
+    const text = (info.description || '').trim();
+    if (text) {
+        blocks.push(headingBlock('Описание'));
+        blocks.push(paragraphBlock(text, false));
+    }
+    blocks.push(paragraphBlock('Аватар: ' + avatar, true));
+    return blocks;
+}
+
+function chatBlocks(messages, limit) {
+    const list = messages.filter(function (message) {
+        return message && typeof message.mes === 'string' && message.mes.length > 0;
+    });
+    const tail = limit > 0 ? list.slice(-limit) : list;
+    const blocks = [];
+
+    if (limit > 0 && list.length > limit) {
+        blocks.push(paragraphBlock('Показаны последние ' + limit + ' из ' + list.length + ' сообщений.', true));
+    }
+
+    for (const message of tail) {
+        const who = message.name || (message.is_user ? 'User' : 'Character');
+        blocks.push(paragraphBlock(who + ': ' + message.mes, false));
+    }
+    return blocks;
+}
+
+/* ------------------------------------------------------------------ */
+/* Sync per category                                                   */
+/* ------------------------------------------------------------------ */
+
+async function syncLorebooks() {
+    const settings = getSettings();
+    const books = await listLorebooks();
+    setStatus('Лорбуки: найдено ' + books.length, 'info');
+
+    let ok = 0;
+    let failed = 0;
+
+    for (const book of books) {
+        try {
+            const data = await readLorebook(book.name);
+            const entries = data.entries || {};
+            const count = Object.keys(entries).length;
+
+            if (count === 0 && !settings.includeEmpty) {
+                setStatus('— ' + book.name + ': пустой, пропуск', 'muted');
+                continue;
+            }
+
+            await upsertPage(settings.lorebooksDb, book.name, entryBlocks(entries));
+            setStatus('— ' + book.name + ': ' + count + ' записей', 'ok');
+            ok++;
+        } catch (err) {
+            failed++;
+            setStatus('— ' + book.name + ': ' + err.message, 'error');
+        }
+    }
+
+    return { ok, failed };
+}
+
+async function syncCharacters() {
+    const settings = getSettings();
+    const characters = getContext().characters || [];
+    setStatus('Персонажи: найдено ' + characters.length, 'info');
+
+    let ok = 0;
+    let failed = 0;
+
+    for (const character of characters) {
+        try {
+            const name = character.name || 'Unnamed';
+            await upsertPage(settings.charactersDb, name, characterBlocks(character));
+            setStatus('— ' + name + ': ok', 'ok');
+            ok++;
+        } catch (err) {
+            failed++;
+            setStatus('— ' + (character.name || '?') + ': ' + err.message, 'error');
+        }
+    }
+
+    return { ok, failed };
+}
+
+async function syncPersonas() {
+    const settings = getSettings();
+    const powerUser = getContext().powerUserSettings || {};
+    const personas = powerUser.personas || {};
+    const descriptions = powerUser.persona_descriptions || {};
+    const avatars = Object.keys(personas);
+
+    setStatus('Персоны: найдено ' + avatars.length, 'info');
+
+    let ok = 0;
+    let failed = 0;
+
+    for (const avatar of avatars) {
+        const name = personas[avatar] || avatar;
+        try {
+            await upsertPage(
+                settings.personasDb,
+                name,
+                personaBlocks(avatar, name, descriptions[avatar]),
+            );
+            setStatus('— ' + name + ': ok', 'ok');
+            ok++;
+        } catch (err) {
+            failed++;
+            setStatus('— ' + name + ': ' + err.message, 'error');
+        }
+    }
+
+    return { ok, failed };
+}
+
+async function syncChats() {
+    const settings = getSettings();
+    const characters = getContext().characters || [];
+    setStatus('Чаты: персонажей ' + characters.length, 'info');
+
+    let ok = 0;
+    let failed = 0;
+
+    for (const character of characters) {
+        let chats = [];
+        try {
+            chats = await listCharacterChats(character);
+        } catch (err) {
+            setStatus('— ' + character.name + ': список чатов недоступен', 'error');
+            failed++;
+            continue;
+        }
+
+        if (!chats.length) {
+            continue;
+        }
+
+        chats.sort(function (a, b) {
+            return String(b.file_id).localeCompare(String(a.file_id));
+        });
+        const selected = chats.slice(0, Math.max(1, settings.chatLimit));
+
+        for (const file of selected) {
+            const title = (character.name || 'Unnamed') + ' — ' + file.file_id;
+            try {
+                const messages = await readChat(character, file);
+                const blocks = chatBlocks(messages, settings.msgLimit);
+                if (!blocks.length) {
+                    continue;
+                }
+                await upsertPage(settings.chatsDb, title, blocks);
+                setStatus('— ' + title + ': ' + messages.length + ' сообщений', 'ok');
+                ok++;
+            } catch (err) {
+                failed++;
+                setStatus('— ' + title + ': ' + err.message, 'error');
+            }
+        }
+    }
+
+    return { ok, failed };
+}
+
+const SYNC_FUNCTIONS = {
+    lorebooks: syncLorebooks,
+    characters: syncCharacters,
+    personas: syncPersonas,
+    chats: syncChats,
+};
+
+async function runCategory(category) {
+    const settings = getSettings();
+    if (!settings.token) {
+        setStatus('Сначала укажите Notion integration token.', 'error');
+        return;
+    }
+    if (!settings[DB_KEYS[category]]) {
+        setStatus(CAT_LABELS[category] + ': укажите database ID.', 'error');
+        return;
+    }
+
+    setBusy(true);
+    setProgress('Синхронизация: ' + CAT_LABELS[category] + '...');
+    setStatus('▶ ' + CAT_LABELS[category] + ': старт', 'info');
+
+    try {
+        const result = await SYNC_FUNCTIONS[category]();
+        settings.lastSync = new Date().toISOString();
+        persist();
+        setStatus(
+            CAT_LABELS[category] + ': готово — ' + result.ok + ' ok, ' + result.failed + ' ошибок',
+            result.failed > 0 ? 'error' : 'ok',
+        );
+    } catch (err) {
+        setStatus(CAT_LABELS[category] + ': ошибка — ' + err.message, 'error');
+    } finally {
+        setProgress('');
+        setBusy(false);
+    }
+}
+
+async function syncAll() {
+    const settings = getSettings();
+    if (!settings.token) {
+        setStatus('Сначала укажите Notion integration token.', 'error');
+        return;
+    }
+
+    const categories = Object.keys(DB_KEYS).filter(function (category) {
+        return Boolean(settings[DB_KEYS[category]]);
+    });
+
+    if (!categories.length) {
+        setStatus('Не указана ни одна база Notion.', 'error');
+        return;
+    }
+
+    setBusy(true);
+    let totalOk = 0;
+    let totalFailed = 0;
+
+    for (const category of categories) {
+        setProgress('Синхронизация: ' + CAT_LABELS[category] + '...');
+        setStatus('▶ ' + CAT_LABELS[category] + ': старт', 'info');
+        try {
+            const result = await SYNC_FUNCTIONS[category]();
+            totalOk += result.ok;
+            totalFailed += result.failed;
+            setStatus(
+                CAT_LABELS[category] + ': готово — ' + result.ok + ' ok, ' + result.failed + ' ошибок',
+                result.failed > 0 ? 'error' : 'ok',
+            );
+        } catch (err) {
+            totalFailed++;
+            setStatus(CAT_LABELS[category] + ': ошибка — ' + err.message, 'error');
+        }
+    }
+
+    settings.lastSync = new Date().toISOString();
+    persist();
+    setProgress('');
+    setBusy(false);
+    setStatus(
+        'Всё готово — ' + totalOk + ' страниц, ' + totalFailed + ' ошибок.',
+        totalFailed > 0 ? 'error' : 'ok',
+    );
+}
 
 async function testConnection() {
     const settings = getSettings();
@@ -269,105 +671,24 @@ async function testConnection() {
         const workspace = (me.bot && me.bot.workspace_name) ? me.bot.workspace_name : '';
         setStatus('Notion OK: ' + (me.name || 'bot') + (workspace ? ' (' + workspace + ')' : ''), 'ok');
 
-        if (settings.databaseId) {
-            const db = await notionRequest('/databases/' + settings.databaseId);
-            const title = (db.title || []).map(function (part) { return part.plain_text; }).join('');
-            setStatus('База доступна: ' + (title || settings.databaseId), 'ok');
-        } else {
-            setStatus('Database ID не указан — синхронизация будет недоступна.', 'muted');
+        for (const category of Object.keys(DB_KEYS)) {
+            const databaseId = settings[DB_KEYS[category]];
+            if (!databaseId) {
+                setStatus(CAT_LABELS[category] + ': база не указана', 'muted');
+                continue;
+            }
+            try {
+                const db = await notionRequest('/databases/' + databaseId);
+                const title = (db.title || []).map(function (part) {
+                    return part.plain_text;
+                }).join('');
+                setStatus(CAT_LABELS[category] + ': ' + (title || databaseId) + ' — ок', 'ok');
+            } catch (err) {
+                setStatus(CAT_LABELS[category] + ': ' + err.message, 'error');
+            }
         }
     } catch (err) {
         setStatus('Ошибка подключения: ' + err.message, 'error');
-    } finally {
-        setBusy(false);
-    }
-}
-
-async function syncLorebook(book) {
-    const settings = getSettings();
-    const data = await readLorebook(book.name);
-    const entries = data.entries || {};
-    const count = Object.keys(entries).length;
-
-    if (count === 0 && !settings.includeEmpty) {
-        return { name: book.name, entries: 0, skipped: true };
-    }
-
-    const blocks = entryBlocks(entries);
-    let pageId;
-
-    const existing = await findPageByTitle(book.name);
-    if (existing) {
-        pageId = existing.id;
-        await clearPage(pageId);
-    } else {
-        const created = await notionRequest('/pages', {
-            method: 'POST',
-            body: {
-                parent: { database_id: settings.databaseId },
-                properties: {
-                    Name: {
-                        title: [{ type: 'text', text: { content: book.name } }],
-                    },
-                },
-            },
-        });
-        pageId = created.id;
-    }
-
-    await appendBlocks(pageId, blocks);
-    return { name: book.name, entries: count, pageId, skipped: false };
-}
-
-async function syncAll() {
-    const settings = getSettings();
-    if (!settings.token) {
-        setStatus('Сначала укажите Notion integration token.', 'error');
-        return;
-    }
-    if (!settings.databaseId) {
-        setStatus('Сначала укажите Notion database ID.', 'error');
-        return;
-    }
-
-    setBusy(true);
-    jQuery('#lorebook_sync_log').empty();
-    setProgress('Читаю список лорбуков...');
-
-    try {
-        const books = await listLorebooks();
-        setStatus('Найдено лорбуков: ' + books.length, 'info');
-
-        let done = 0;
-        let failed = 0;
-
-        for (const book of books) {
-            try {
-                const result = await syncLorebook(book);
-                if (result.skipped) {
-                    setStatus('— ' + book.name + ': пропущен (пустой)', 'muted');
-                } else {
-                    setStatus('— ' + book.name + ': ' + result.entries + ' записей', 'ok');
-                }
-                done++;
-            } catch (err) {
-                failed++;
-                setStatus('— ' + book.name + ': ' + err.message, 'error');
-            }
-            setProgress('Обработано ' + (done + failed) + ' из ' + books.length);
-        }
-
-        settings.lastSync = new Date().toISOString();
-        persist();
-
-        setProgress('');
-        setStatus(
-            'Готово: ' + done + ' синхронизировано, ' + failed + ' с ошибкой.',
-            failed > 0 ? 'error' : 'ok',
-        );
-    } catch (err) {
-        setProgress('');
-        setStatus('Синхронизация не удалась: ' + err.message, 'error');
     } finally {
         setBusy(false);
     }
@@ -377,39 +698,66 @@ async function syncAll() {
 /* UI wiring                                                           */
 /* ------------------------------------------------------------------ */
 
+function bindDbInput(category) {
+    const selector = '#ls_db_' + category;
+    jQuery(selector)
+        .val(getSettings()[DB_KEYS[category]])
+        .on('input', function () {
+            getSettings()[DB_KEYS[category]] = String(jQuery(this).val()).trim();
+            persist();
+        });
+}
+
 function bindUi() {
     const settings = getSettings();
 
-    jQuery('#lorebook_sync_token')
+    jQuery('#ls_token')
         .val(settings.token)
         .on('input', function () {
             settings.token = String(jQuery(this).val()).trim();
             persist();
         });
 
-    jQuery('#lorebook_sync_database')
-        .val(settings.databaseId)
-        .on('input', function () {
-            settings.databaseId = String(jQuery(this).val()).trim();
-            persist();
-        });
+    jQuery('#ls_toggle_token').on('click', function () {
+        const field = jQuery('#ls_token');
+        const hidden = field.attr('type') === 'password';
+        field.attr('type', hidden ? 'text' : 'password');
+        jQuery(this).text(hidden ? 'Hide' : 'Show');
+    });
 
-    jQuery('#lorebook_sync_include_empty')
+    for (const category of Object.keys(DB_KEYS)) {
+        bindDbInput(category);
+    }
+
+    jQuery('#ls_include_empty')
         .prop('checked', Boolean(settings.includeEmpty))
         .on('change', function () {
             settings.includeEmpty = Boolean(jQuery(this).prop('checked'));
             persist();
         });
 
-    jQuery('#lorebook_sync_toggle_token').on('click', function () {
-        const field = jQuery('#lorebook_sync_token');
-        const hidden = field.attr('type') === 'password';
-        field.attr('type', hidden ? 'text' : 'password');
-        jQuery(this).text(hidden ? 'Hide' : 'Show');
-    });
+    jQuery('#ls_chat_limit')
+        .val(settings.chatLimit)
+        .on('input', function () {
+            settings.chatLimit = Math.max(1, Number(jQuery(this).val()) || 1);
+            persist();
+        });
 
-    jQuery('#lorebook_sync_test').on('click', testConnection);
-    jQuery('#lorebook_sync_sync').on('click', syncAll);
+    jQuery('#ls_msg_limit')
+        .val(settings.msgLimit)
+        .on('input', function () {
+            settings.msgLimit = Math.max(1, Number(jQuery(this).val()) || 1);
+            persist();
+        });
+
+    jQuery('#ls_test').on('click', testConnection);
+    jQuery('#ls_sync_all').on('click', syncAll);
+    jQuery('.ls-sync-btn').on('click', function () {
+        const category = jQuery(this).data('cat');
+        if (category) {
+            runCategory(category);
+        }
+    });
 }
 
 jQuery(async function () {
