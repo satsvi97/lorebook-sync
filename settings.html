@@ -1,37 +1,74 @@
 <div class="lorebook-sync-settings">
     <div class="inline-drawer">
         <div class="inline-drawer-toggle inline-drawer-header">
-            <b>Lorebook Sync</b>
+            <b>✦ LOREBOOK SYNC ✦</b>
             <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
         </div>
         <div class="inline-drawer-content">
-            <small>Синхронизация лорбуков из SillyTavern в базу Notion.</small>
+            <small>Синхронизация данных SillyTavern в базы Notion.</small>
 
-            <label for="lorebook_sync_token">Notion integration token</label>
+            <label for="ls_token">Notion integration token</label>
             <div class="ls-row">
-                <input id="lorebook_sync_token" type="password" class="text_pole"
+                <input id="ls_token" type="password" class="text_pole"
                        placeholder="ntn_..." autocomplete="off">
-                <div id="lorebook_sync_toggle_token" class="menu_button">Show</div>
+                <div id="ls_toggle_token" class="menu_button">Show</div>
             </div>
-            <small>Создать токен: Notion → Settings → Connections → Develop or manage integrations.</small>
-
-            <label for="lorebook_sync_database">Notion database ID</label>
-            <input id="lorebook_sync_database" type="text" class="text_pole"
-                   placeholder="32-символьный id базы">
-            <small>ID берётся из ссылки на базу. Не забудьте дать интеграции доступ к базе (Share).</small>
-
-            <label class="checkbox_label">
-                <input id="lorebook_sync_include_empty" type="checkbox">
-                <span>Включать пустые лорбуки</span>
-            </label>
 
             <div class="ls-actions">
-                <div id="lorebook_sync_test" class="menu_button">Проверить связь</div>
-                <div id="lorebook_sync_sync" class="menu_button">Синхронизировать в Notion</div>
+                <div id="ls_test" class="menu_button">Проверить связь</div>
+                <div id="ls_sync_all" class="menu_button">Синхронизировать всё</div>
             </div>
 
-            <div id="lorebook_sync_progress" class="ls-progress"></div>
-            <div id="lorebook_sync_log" class="ls-log"></div>
+            <div class="ls-section-title">Базы Notion</div>
+
+            <div class="ls-cat">
+                <div class="ls-cat-head">
+                    <span>📚 Лорбуки</span>
+                    <div class="menu_button ls-sync-btn" data-cat="lorebooks">Sync</div>
+                </div>
+                <input id="ls_db_lorebooks" type="text" class="text_pole" placeholder="database id">
+                <label class="checkbox_label">
+                    <input id="ls_include_empty" type="checkbox">
+                    <span>включать пустые лорбуки</span>
+                </label>
+            </div>
+
+            <div class="ls-cat">
+                <div class="ls-cat-head">
+                    <span>🎭 Персонажи</span>
+                    <div class="menu_button ls-sync-btn" data-cat="characters">Sync</div>
+                </div>
+                <input id="ls_db_characters" type="text" class="text_pole" placeholder="database id">
+            </div>
+
+            <div class="ls-cat">
+                <div class="ls-cat-head">
+                    <span>🧑 Персоны</span>
+                    <div class="menu_button ls-sync-btn" data-cat="personas">Sync</div>
+                </div>
+                <input id="ls_db_personas" type="text" class="text_pole" placeholder="database id">
+            </div>
+
+            <div class="ls-cat">
+                <div class="ls-cat-head">
+                    <span>💬 Чаты</span>
+                    <div class="menu_button ls-sync-btn" data-cat="chats">Sync</div>
+                </div>
+                <input id="ls_db_chats" type="text" class="text_pole" placeholder="database id">
+                <div class="ls-row ls-nums">
+                    <label class="ls-num">
+                        <span>чатов на персонажа</span>
+                        <input id="ls_chat_limit" type="number" min="1" max="100">
+                    </label>
+                    <label class="ls-num">
+                        <span>сообщений в чате</span>
+                        <input id="ls_msg_limit" type="number" min="1" max="5000">
+                    </label>
+                </div>
+            </div>
+
+            <div id="ls_progress" class="ls-progress"></div>
+            <div id="ls_log" class="ls-log"></div>
         </div>
     </div>
 </div>

@@ -1,5 +1,5 @@
 {
-  "display_name": "Lorebook Sync",
+  "display_name": "✦ LOREBOOK SYNC ✦",
   "loading_order": 100,
   "requires": [],
   "optional": [],
@@ -7,7 +7,7 @@
   "js": "index.js",
   "css": "style.css",
   "author": "Selena",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "homePage": "https://github.com/satsvi97/lorebook-sync",
   "auto_update": false
 }
