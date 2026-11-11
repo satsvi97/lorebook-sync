@@ -9,6 +9,7 @@ import { extension_settings, getContext } from '../../../extensions.js';
 import { getRequestHeaders } from '../../../../script.js';
 
 const MODULE_NAME = 'lorebook-sync';
+const EXT_VERSION = '0.3.0';
 const NOTION_API = 'https://api.notion.com/v1';
 const NOTION_VERSION = '2022-06-28';
 
@@ -36,6 +37,7 @@ const defaultSettings = Object.freeze({
     charactersDb: '',
     personasDb: '',
     chatsDb: '',
+    parentPageId: '',
     includeEmpty: false,
     chatLimit: 5,
     msgLimit: 300,
@@ -92,7 +94,7 @@ function setProgress(text) {
 }
 
 function setBusy(busy) {
-    jQuery('.ls-sync-btn, #ls_test, #ls_sync_all')
+    jQuery('.ls-sync-btn, #ls_test, #ls_sync_all, #ls_create_dbs')
         .toggleClass('disabled', busy)
         .attr('aria-disabled', busy ? 'true' : 'false');
 }
@@ -706,6 +708,88 @@ async function testConnection() {
     }
 }
 
+const DB_TITLES = {
+    lorebooks: '✦ Lorebooks ✦',
+    characters: '✦ Characters ✦',
+    personas: '✦ Personas ✦',
+    chats: '✦ Chats ✦',
+};
+
+/**
+ * Databases live under a Notion page. Reuse the page of any configured
+ * database, or the page id the user pasted manually.
+ */
+async function resolveParentPageId() {
+    const settings = getSettings();
+    if (settings.parentPageId) {
+        return settings.parentPageId;
+    }
+    for (const category of Object.keys(DB_KEYS)) {
+        const databaseId = settings[DB_KEYS[category]];
+        if (!databaseId) {
+            continue;
+        }
+        try {
+            const db = await notionRequest('/databases/' + databaseId);
+            if (db.parent && db.parent.type === 'page_id') {
+                return db.parent.page_id;
+            }
+        } catch (err) {
+            // Try the next configured database.
+        }
+    }
+    return null;
+}
+
+async function createMissingDatabases() {
+    const settings = getSettings();
+    if (!settings.token) {
+        setStatus('Сначала укажите Notion integration token.', 'error');
+        return;
+    }
+
+    const missing = Object.keys(DB_KEYS).filter(function (category) {
+        return !settings[DB_KEYS[category]];
+    });
+
+    if (!missing.length) {
+        setStatus('Все четыре базы уже указаны — создавать нечего.', 'muted');
+        return;
+    }
+
+    setBusy(true);
+    setProgress('Создаю базы Notion...');
+
+    try {
+        const parentPageId = await resolveParentPageId();
+        if (!parentPageId) {
+            throw new Error('не нашла страницу-родителя. Укажите ID страницы Notion ниже.');
+        }
+
+        for (const category of missing) {
+            const created = await notionRequest('/databases', {
+                method: 'POST',
+                body: {
+                    parent: { type: 'page_id', page_id: parentPageId },
+                    title: [{ type: 'text', text: { content: DB_TITLES[category] } }],
+                    properties: { Name: { title: {} } },
+                },
+            });
+            settings[DB_KEYS[category]] = created.id;
+            jQuery('#ls_db_' + category).val(created.id);
+            setStatus('+ ' + DB_TITLES[category] + ': создана', 'ok');
+        }
+
+        persist();
+        setStatus('Готово: создано баз — ' + missing.length, 'ok');
+    } catch (err) {
+        setStatus('Не удалось создать базы: ' + err.message, 'error');
+    } finally {
+        setProgress('');
+        setBusy(false);
+    }
+}
+
 /* ------------------------------------------------------------------ */
 /* UI wiring                                                           */
 /* ------------------------------------------------------------------ */
@@ -764,6 +848,17 @@ function bindUi() {
 
     jQuery('#ls_test').on('click', testConnection);
     jQuery('#ls_sync_all').on('click', syncAll);
+    jQuery('#ls_create_dbs').on('click', createMissingDatabases);
+
+    jQuery('#ls_version').text('v' + EXT_VERSION);
+
+    jQuery('#ls_parent_page')
+        .val(settings.parentPageId)
+        .on('input', function () {
+            settings.parentPageId = String(jQuery(this).val()).trim();
+            persist();
+        });
+
     jQuery('.ls-sync-btn').on('click', function () {
         const category = jQuery(this).data('cat');
         if (category) {

@@ -13,7 +13,32 @@
     display: flex;
     gap: 8px;
     flex-wrap: wrap;
+    align-items: center;
     margin-top: 10px;
+}
+
+.lorebook-sync-settings .ls-actions-second {
+    margin-top: 6px;
+}
+
+.lorebook-sync-settings .ls-version {
+    margin-left: auto;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    font-family: monospace;
+    font-size: 10px;
+    line-height: 1.5;
+    letter-spacing: 0.04em;
+    opacity: 0.6;
+    cursor: default;
+}
+
+.lorebook-sync-settings .ls-mini-label {
+    margin-top: 8px;
+    font-size: 11px;
+    opacity: 0.75;
 }
 
 .lorebook-sync-settings .ls-section-title {
