@@ -9,7 +9,7 @@ import { extension_settings, getContext } from '../../../extensions.js';
 import { getRequestHeaders } from '../../../../script.js';
 
 const MODULE_NAME = 'lorebook-sync';
-const EXT_VERSION = '0.3.5';
+const EXT_VERSION = '0.4.0';
 
 console.info('Lorebook Sync v' + EXT_VERSION + ' loaded');
 const NOTION_API = 'https://api.notion.com/v1';
@@ -43,6 +43,7 @@ const defaultSettings = Object.freeze({
     includeEmpty: false,
     chatLimit: 5,
     msgLimit: 300,
+    rewriteChats: false,
     lastSync: '',
 });
 
@@ -191,6 +192,107 @@ async function getTitleProperty(databaseId) {
     const result = found || 'Name';
     titlePropertyCache[databaseId] = result;
     return result;
+}
+
+function hashString(input) {
+    const value = String(input == null ? '' : input);
+    let hash = 2166136261;
+    for (let i = 0; i < value.length; i++) {
+        hash ^= value.charCodeAt(i);
+        hash = Math.imul(hash, 16777619);
+    }
+    return (hash >>> 0).toString(16);
+}
+
+const SYNC_PROPERTY = 'Sync';
+const syncPropertyCache = {};
+
+/**
+ * Adds a "Sync" rich_text property to the database once, so pages can
+ * remember what was already written without scanning all blocks.
+ */
+async function ensureSyncProperty(databaseId) {
+    if (!databaseId || syncPropertyCache[databaseId]) {
+        return;
+    }
+    const db = await notionRequest('/databases/' + databaseId);
+    const properties = db.properties || {};
+    if (!properties[SYNC_PROPERTY] || properties[SYNC_PROPERTY].type !== 'rich_text') {
+        const body = { properties: {} };
+        body.properties[SYNC_PROPERTY] = { rich_text: {} };
+        await notionRequest('/databases/' + databaseId, { method: 'PATCH', body });
+    }
+    syncPropertyCache[databaseId] = true;
+}
+
+function encodeMarker(data) {
+    return '⟦ls:v1 ' + Object.keys(data).map(function (key) {
+        return key + '=' + data[key];
+    }).join(' ') + '⟧';
+}
+
+function parseMarker(text) {
+    const match = /^⟦ls:v1\s+(.+?)⟧$/.exec(String(text || '').trim());
+    if (!match) {
+        return null;
+    }
+    const result = {};
+    for (const pair of match[1].split(/\s+/)) {
+        const eq = pair.indexOf('=');
+        if (eq > 0) {
+            result[pair.slice(0, eq)] = pair.slice(eq + 1);
+        }
+    }
+    return result;
+}
+
+function readMarker(page) {
+    const property = page && page.properties && page.properties[SYNC_PROPERTY];
+    if (!property || !Array.isArray(property.rich_text)) {
+        return null;
+    }
+    const text = property.rich_text.map(function (part) {
+        return part.plain_text || (part.text && part.text.content) || '';
+    }).join('');
+    return parseMarker(text);
+}
+
+async function writeMarker(pageId, data) {
+    await notionRequest('/pages/' + pageId, {
+        method: 'PATCH',
+        body: {
+            properties: {
+                [SYNC_PROPERTY]: {
+                    rich_text: [{ type: 'text', text: { content: encodeMarker(data) } }],
+                },
+            },
+        },
+    });
+}
+
+async function createPage(databaseId, title) {
+    const property = await getTitleProperty(databaseId);
+    const properties = {};
+    properties[property] = {
+        title: [{ type: 'text', text: { content: title.slice(0, 1900) } }],
+    };
+    const created = await notionRequest('/pages', {
+        method: 'POST',
+        body: {
+            parent: { database_id: databaseId },
+            properties,
+        },
+    });
+    return created.id;
+}
+
+function summaryLine(result) {
+    const parts = [result.ok + ' обновлено'];
+    if (result.skipped) {
+        parts.push(result.skipped + ' без изменений');
+    }
+    parts.push(result.failed + ' ошибок');
+    return parts.join(', ');
 }
 
 function richText(content) {
@@ -480,11 +582,14 @@ function chatBlocks(messages, limit) {
 
 async function syncLorebooks() {
     const settings = getSettings();
+    await ensureSyncProperty(settings.lorebooksDb);
+
     const books = await listLorebooks();
     setStatus('Лорбуки: найдено ' + books.length, 'info');
 
     let ok = 0;
     let failed = 0;
+    let skipped = 0;
 
     for (const book of books) {
         try {
@@ -494,10 +599,25 @@ async function syncLorebooks() {
 
             if (count === 0 && !settings.includeEmpty) {
                 setStatus('— ' + book.name + ': пустой, пропуск', 'muted');
+                skipped++;
                 continue;
             }
 
-            await upsertPage(settings.lorebooksDb, book.name, entryBlocks(entries));
+            const blocks = entryBlocks(entries);
+            const signature = hashString(JSON.stringify(entries));
+
+            const existing = await findPageByTitle(settings.lorebooksDb, book.name);
+            if (existing) {
+                const marker = readMarker(existing);
+                if (marker && marker.kind === 'lorebook' && marker.hash === signature) {
+                    setStatus('— ' + book.name + ': без изменений', 'muted');
+                    skipped++;
+                    continue;
+                }
+            }
+
+            const pageId = await upsertPage(settings.lorebooksDb, book.name, blocks);
+            await writeMarker(pageId, { kind: 'lorebook', hash: signature });
             setStatus('— ' + book.name + ': ' + count + ' записей', 'ok');
             ok++;
         } catch (err) {
@@ -506,22 +626,39 @@ async function syncLorebooks() {
         }
     }
 
-    return { ok, failed };
+    return { ok, failed, skipped };
 }
 
 async function syncCharacters() {
     const settings = getSettings();
+    await ensureSyncProperty(settings.charactersDb);
+
     const characters = getContext().characters || [];
     setStatus('Персонажи: найдено ' + characters.length, 'info');
 
     let ok = 0;
     let failed = 0;
+    let skipped = 0;
 
     for (const character of characters) {
         try {
             const name = character.name || 'Unnamed';
-            await upsertPage(settings.charactersDb, name, characterBlocks(character));
-            setStatus('— ' + name + ': ok', 'ok');
+            const blocks = characterBlocks(character);
+            const signature = hashString(JSON.stringify(blocks));
+
+            const existing = await findPageByTitle(settings.charactersDb, name);
+            if (existing) {
+                const marker = readMarker(existing);
+                if (marker && marker.kind === 'character' && marker.hash === signature) {
+                    setStatus('— ' + name + ': без изменений', 'muted');
+                    skipped++;
+                    continue;
+                }
+            }
+
+            const pageId = await upsertPage(settings.charactersDb, name, blocks);
+            await writeMarker(pageId, { kind: 'character', hash: signature });
+            setStatus('— ' + name + ': обновлён', 'ok');
             ok++;
         } catch (err) {
             failed++;
@@ -529,11 +666,13 @@ async function syncCharacters() {
         }
     }
 
-    return { ok, failed };
+    return { ok, failed, skipped };
 }
 
 async function syncPersonas() {
     const settings = getSettings();
+    await ensureSyncProperty(settings.personasDb);
+
     const powerUser = getContext().powerUserSettings || {};
     const personas = powerUser.personas || {};
     const descriptions = powerUser.persona_descriptions || {};
@@ -543,16 +682,27 @@ async function syncPersonas() {
 
     let ok = 0;
     let failed = 0;
+    let skipped = 0;
 
     for (const avatar of avatars) {
         const name = personas[avatar] || avatar;
         try {
-            await upsertPage(
-                settings.personasDb,
-                name,
-                personaBlocks(avatar, name, descriptions[avatar]),
-            );
-            setStatus('— ' + name + ': ok', 'ok');
+            const blocks = personaBlocks(avatar, name, descriptions[avatar]);
+            const signature = hashString(JSON.stringify(blocks));
+
+            const existing = await findPageByTitle(settings.personasDb, name);
+            if (existing) {
+                const marker = readMarker(existing);
+                if (marker && marker.kind === 'persona' && marker.hash === signature) {
+                    setStatus('— ' + name + ': без изменений', 'muted');
+                    skipped++;
+                    continue;
+                }
+            }
+
+            const pageId = await upsertPage(settings.personasDb, name, blocks);
+            await writeMarker(pageId, { kind: 'persona', hash: signature });
+            setStatus('— ' + name + ': обновлён', 'ok');
             ok++;
         } catch (err) {
             failed++;
@@ -560,16 +710,29 @@ async function syncPersonas() {
         }
     }
 
-    return { ok, failed };
+    return { ok, failed, skipped };
+}
+
+function chatBlocksFrom(list, from, to) {
+    const blocks = [];
+    for (let i = from; i < to; i++) {
+        const message = list[i];
+        const who = message.name || (message.is_user ? 'User' : 'Character');
+        blocks.push(paragraphBlock(who + ': ' + message.mes, false));
+    }
+    return blocks;
 }
 
 async function syncChats() {
     const settings = getSettings();
+    await ensureSyncProperty(settings.chatsDb);
+
     const characters = getContext().characters || [];
     setStatus('Чаты: персонажей ' + characters.length, 'info');
 
     let ok = 0;
     let failed = 0;
+    let skipped = 0;
 
     for (const character of characters) {
         let chats = [];
@@ -594,12 +757,52 @@ async function syncChats() {
             const title = (character.name || 'Unnamed') + ' — ' + file.file_id;
             try {
                 const messages = await readChat(character, file);
-                const blocks = chatBlocks(messages, settings.msgLimit);
-                if (!blocks.length) {
+                const list = messages.filter(function (message) {
+                    return message && typeof message.mes === 'string' && message.mes.trim().length > 0;
+                });
+
+                if (!list.length) {
                     continue;
                 }
-                await upsertPage(settings.chatsDb, title, blocks);
-                setStatus('— ' + title + ': ' + messages.length + ' сообщений', 'ok');
+
+                const existing = await findPageByTitle(settings.chatsDb, title);
+                let pageId = existing ? existing.id : null;
+                let from = 0;
+                let appended = 0;
+
+                if (pageId) {
+                    const marker = settings.rewriteChats ? null : readMarker(existing);
+                    if (marker && marker.kind === 'chat') {
+                        const cursor = Number(marker.cursor);
+                        if (Number.isFinite(cursor)) {
+                            if (cursor >= list.length - 1) {
+                                setStatus('— ' + title + ': без изменений (' + list.length + ')', 'muted');
+                                skipped++;
+                                continue;
+                            }
+                            from = cursor + 1;
+                        }
+                    }
+
+                    if (settings.rewriteChats || from === 0) {
+                        await clearPage(pageId);
+                        from = settings.msgLimit > 0 ? Math.max(0, list.length - settings.msgLimit) : 0;
+                    } else if (settings.msgLimit > 0) {
+                        from = Math.max(from, list.length - settings.msgLimit);
+                    }
+                } else {
+                    pageId = await createPage(settings.chatsDb, title);
+                    from = settings.msgLimit > 0 ? Math.max(0, list.length - settings.msgLimit) : 0;
+                }
+
+                const blocks = chatBlocksFrom(list, from, list.length);
+                if (blocks.length) {
+                    await appendBlocks(pageId, blocks);
+                    appended = list.length - from;
+                }
+
+                await writeMarker(pageId, { kind: 'chat', cursor: list.length - 1 });
+                setStatus('— ' + title + ': +' + appended + ' сообщений (всего ' + list.length + ')', 'ok');
                 ok++;
             } catch (err) {
                 failed++;
@@ -608,7 +811,7 @@ async function syncChats() {
         }
     }
 
-    return { ok, failed };
+    return { ok, failed, skipped };
 }
 
 const SYNC_FUNCTIONS = {
@@ -638,7 +841,7 @@ async function runCategory(category) {
         settings.lastSync = new Date().toISOString();
         persist();
         setStatus(
-            CAT_LABELS[category] + ': готово — ' + result.ok + ' ok, ' + result.failed + ' ошибок',
+            CAT_LABELS[category] + ': готово — ' + summaryLine(result),
             result.failed > 0 ? 'error' : 'ok',
         );
     } catch (err) {
@@ -681,7 +884,7 @@ async function syncAll() {
                 totalOk += result.ok;
                 totalFailed += result.failed;
                 setStatus(
-                    CAT_LABELS[category] + ': готово — ' + result.ok + ' ok, ' + result.failed + ' ошибок',
+                    CAT_LABELS[category] + ': готово — ' + summaryLine(result),
                     result.failed > 0 ? 'error' : 'ok',
                 );
             } catch (err) {
@@ -953,6 +1156,13 @@ function bindUi() {
         .val(settings.msgLimit)
         .on('input', function () {
             settings.msgLimit = Math.max(1, Number(jQuery(this).val()) || 1);
+            persist();
+        });
+
+    jQuery('#ls_rewrite_chats')
+        .prop('checked', Boolean(settings.rewriteChats))
+        .on('change', function () {
+            settings.rewriteChats = Boolean(jQuery(this).prop('checked'));
             persist();
         });
 
