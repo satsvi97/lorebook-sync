@@ -9,7 +9,9 @@ import { extension_settings, getContext } from '../../../extensions.js';
 import { getRequestHeaders } from '../../../../script.js';
 
 const MODULE_NAME = 'lorebook-sync';
-const EXT_VERSION = '0.3.1';
+const EXT_VERSION = '0.3.2';
+
+console.info('Lorebook Sync v' + EXT_VERSION + ' loaded');
 const NOTION_API = 'https://api.notion.com/v1';
 const NOTION_VERSION = '2022-06-28';
 
@@ -65,7 +67,25 @@ function getSettings() {
 }
 
 function persist() {
-    getContext().saveSettingsDebounced();
+    const context = getContext();
+    try {
+        if (typeof context.saveSettingsDebounced === 'function') {
+            context.saveSettingsDebounced();
+        } else if (typeof context.saveSettings === 'function') {
+            context.saveSettings();
+        }
+    } catch (err) {
+        console.warn('Lorebook Sync: settings save failed', err);
+    }
+}
+
+function shortId(id) {
+    const value = String(id || '');
+    return value.length > 10 ? (value.slice(0, 8) + '…') : value;
+}
+
+function setDbField(category, value) {
+    jQuery('.lorebook-sync-settings [data-dbcat="' + category + '"], #ls_db_' + category).val(value);
 }
 
 /* ------------------------------------------------------------------ */
@@ -607,7 +627,7 @@ async function runCategory(category) {
 
     setBusy(true);
     setProgress('Синхронизация: ' + CAT_LABELS[category] + '...');
-    setStatus('▶ ' + CAT_LABELS[category] + ': старт', 'info');
+    setStatus('▶ ' + CAT_LABELS[category] + ': старт (база ' + shortId(settings[DB_KEYS[category]]) + ')', 'info');
 
     try {
         const result = await SYNC_FUNCTIONS[category]();
@@ -787,8 +807,8 @@ async function createMissingDatabases() {
             const existing = await findDatabaseByTitle(DB_TITLES[category]);
             if (existing) {
                 settings[DB_KEYS[category]] = existing.id;
-                jQuery('#ls_db_' + category).val(existing.id);
-                setStatus('= ' + DB_TITLES[category] + ': найдена готовая', 'info');
+                setDbField(category, existing.id);
+                setStatus('= ' + DB_TITLES[category] + ': найдена готовая (' + shortId(existing.id) + ')', 'info');
                 continue;
             }
 
@@ -806,11 +826,18 @@ async function createMissingDatabases() {
                 },
             });
             settings[DB_KEYS[category]] = created.id;
-            jQuery('#ls_db_' + category).val(created.id);
-            setStatus('+ ' + DB_TITLES[category] + ': создана', 'ok');
+            setDbField(category, created.id);
+            setStatus('+ ' + DB_TITLES[category] + ': создана (' + shortId(created.id) + ')', 'ok');
         }
 
         persist();
+
+        for (const category of missing) {
+            const value = getSettings()[DB_KEYS[category]];
+            setDbField(category, value || '');
+            setStatus('  ' + CAT_LABELS[category] + ': ' + (value ? shortId(value) : 'пусто'), value ? 'ok' : 'error');
+        }
+
         setStatus('Готово: проверено категорий — ' + missing.length, 'ok');
     } catch (err) {
         setStatus('Не удалось создать базы: ' + err.message, 'error');
@@ -825,7 +852,7 @@ async function createMissingDatabases() {
 /* ------------------------------------------------------------------ */
 
 function bindDbInput(category) {
-    const selector = '#ls_db_' + category;
+    const selector = '.lorebook-sync-settings [data-dbcat="' + category + '"], #ls_db_' + category;
     jQuery(selector)
         .val(getSettings()[DB_KEYS[category]])
         .on('input', function () {
@@ -905,7 +932,8 @@ jQuery(async function () {
         );
         jQuery('#extensions_settings2').append(html);
         bindUi();
-        console.log('Lorebook Sync: ready');
+        setStatus('Lorebook Sync v' + EXT_VERSION + ': готов', 'muted');
+        console.log('Lorebook Sync: ready v' + EXT_VERSION);
     } catch (err) {
         console.error('Lorebook Sync: failed to render settings', err);
     }

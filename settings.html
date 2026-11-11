@@ -17,7 +17,7 @@
             <div class="ls-actions">
                 <div id="ls_test" class="menu_button">Проверить связь</div>
                 <div id="ls_sync_all" class="menu_button">Синхронизировать всё</div>
-                <span id="ls_version" class="ls-version" title="Версия расширения">v0.3.1</span>
+                <span id="ls_version" class="ls-version" title="Версия расширения">v0.3.2</span>
             </div>
 
             <div class="ls-actions ls-actions-second">
@@ -34,7 +34,7 @@
                     <span>📚 Лорбуки</span>
                     <div class="menu_button ls-sync-btn" data-cat="lorebooks">Sync</div>
                 </div>
-                <input id="ls_db_lorebooks" type="text" class="text_pole" placeholder="database id">
+                <input id="ls_db_lorebooks" data-dbcat="lorebooks" type="text" class="text_pole" placeholder="database id">
                 <label class="checkbox_label">
                     <input id="ls_include_empty" type="checkbox">
                     <span>включать пустые лорбуки</span>
@@ -46,7 +46,7 @@
                     <span>🎭 Персонажи</span>
                     <div class="menu_button ls-sync-btn" data-cat="characters">Sync</div>
                 </div>
-                <input id="ls_db_characters" type="text" class="text_pole" placeholder="database id">
+                <input id="ls_db_characters" data-dbcat="characters" type="text" class="text_pole" placeholder="database id">
             </div>
 
             <div class="ls-cat">
@@ -54,7 +54,7 @@
                     <span>🧑 Персоны</span>
                     <div class="menu_button ls-sync-btn" data-cat="personas">Sync</div>
                 </div>
-                <input id="ls_db_personas" type="text" class="text_pole" placeholder="database id">
+                <input id="ls_db_personas" data-dbcat="personas" type="text" class="text_pole" placeholder="database id">
             </div>
 
             <div class="ls-cat">
@@ -62,7 +62,7 @@
                     <span>💬 Чаты</span>
                     <div class="menu_button ls-sync-btn" data-cat="chats">Sync</div>
                 </div>
-                <input id="ls_db_chats" type="text" class="text_pole" placeholder="database id">
+                <input id="ls_db_chats" data-dbcat="chats" type="text" class="text_pole" placeholder="database id">
                 <div class="ls-row ls-nums">
                     <label class="ls-num">
                         <span>чатов на персонажа</span>
