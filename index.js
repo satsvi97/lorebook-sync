@@ -6,10 +6,10 @@
  */
 
 import { extension_settings, getContext } from '../../../extensions.js';
-import { getRequestHeaders } from '../../../../script.js';
+import { getRequestHeaders, eventSource, event_types } from '../../../../script.js';
 
 const MODULE_NAME = 'lorebook-sync';
-const EXT_VERSION = '0.4.0';
+const EXT_VERSION = '0.5.0';
 
 console.info('Lorebook Sync v' + EXT_VERSION + ' loaded');
 const NOTION_API = 'https://api.notion.com/v1';
@@ -44,6 +44,8 @@ const defaultSettings = Object.freeze({
     chatLimit: 5,
     msgLimit: 300,
     rewriteChats: false,
+    autoSyncEnabled: false,
+    autoSyncEvery: 10,
     lastSync: '',
 });
 
@@ -723,6 +725,55 @@ function chatBlocksFrom(list, from, to) {
     return blocks;
 }
 
+async function syncChatFile(character, file, settings) {
+    const title = (character.name || 'Unnamed') + ' — ' + file.file_id;
+    const messages = await readChat(character, file);
+    const list = messages.filter(function (message) {
+        return message && typeof message.mes === 'string' && message.mes.trim().length > 0;
+    });
+
+    if (!list.length) {
+        return { status: 'empty', appended: 0, total: 0, title };
+    }
+
+    const existing = await findPageByTitle(settings.chatsDb, title);
+    let pageId = existing ? existing.id : null;
+    let from = 0;
+
+    if (pageId) {
+        const marker = settings.rewriteChats ? null : readMarker(existing);
+        if (marker && marker.kind === 'chat') {
+            const cursor = Number(marker.cursor);
+            if (Number.isFinite(cursor)) {
+                if (cursor >= list.length - 1) {
+                    return { status: 'skipped', appended: 0, total: list.length, title };
+                }
+                from = cursor + 1;
+            }
+        }
+
+        if (settings.rewriteChats || from === 0) {
+            await clearPage(pageId);
+            from = settings.msgLimit > 0 ? Math.max(0, list.length - settings.msgLimit) : 0;
+        } else if (settings.msgLimit > 0) {
+            from = Math.max(from, list.length - settings.msgLimit);
+        }
+    } else {
+        pageId = await createPage(settings.chatsDb, title);
+        from = settings.msgLimit > 0 ? Math.max(0, list.length - settings.msgLimit) : 0;
+    }
+
+    const blocks = chatBlocksFrom(list, from, list.length);
+    let appended = 0;
+    if (blocks.length) {
+        await appendBlocks(pageId, blocks);
+        appended = list.length - from;
+    }
+
+    await writeMarker(pageId, { kind: 'chat', cursor: list.length - 1 });
+    return { status: 'updated', appended, total: list.length, title };
+}
+
 async function syncChats() {
     const settings = getSettings();
     await ensureSyncProperty(settings.chatsDb);
@@ -754,64 +805,70 @@ async function syncChats() {
         const selected = chats.slice(0, Math.max(1, settings.chatLimit));
 
         for (const file of selected) {
-            const title = (character.name || 'Unnamed') + ' — ' + file.file_id;
             try {
-                const messages = await readChat(character, file);
-                const list = messages.filter(function (message) {
-                    return message && typeof message.mes === 'string' && message.mes.trim().length > 0;
-                });
-
-                if (!list.length) {
-                    continue;
+                const result = await syncChatFile(character, file, settings);
+                if (result.status === 'skipped') {
+                    setStatus('— ' + result.title + ': без изменений (' + result.total + ')', 'muted');
+                    skipped++;
+                } else if (result.status === 'updated') {
+                    setStatus('— ' + result.title + ': +' + result.appended + ' сообщений (всего ' + result.total + ')', 'ok');
+                    ok++;
                 }
-
-                const existing = await findPageByTitle(settings.chatsDb, title);
-                let pageId = existing ? existing.id : null;
-                let from = 0;
-                let appended = 0;
-
-                if (pageId) {
-                    const marker = settings.rewriteChats ? null : readMarker(existing);
-                    if (marker && marker.kind === 'chat') {
-                        const cursor = Number(marker.cursor);
-                        if (Number.isFinite(cursor)) {
-                            if (cursor >= list.length - 1) {
-                                setStatus('— ' + title + ': без изменений (' + list.length + ')', 'muted');
-                                skipped++;
-                                continue;
-                            }
-                            from = cursor + 1;
-                        }
-                    }
-
-                    if (settings.rewriteChats || from === 0) {
-                        await clearPage(pageId);
-                        from = settings.msgLimit > 0 ? Math.max(0, list.length - settings.msgLimit) : 0;
-                    } else if (settings.msgLimit > 0) {
-                        from = Math.max(from, list.length - settings.msgLimit);
-                    }
-                } else {
-                    pageId = await createPage(settings.chatsDb, title);
-                    from = settings.msgLimit > 0 ? Math.max(0, list.length - settings.msgLimit) : 0;
-                }
-
-                const blocks = chatBlocksFrom(list, from, list.length);
-                if (blocks.length) {
-                    await appendBlocks(pageId, blocks);
-                    appended = list.length - from;
-                }
-
-                await writeMarker(pageId, { kind: 'chat', cursor: list.length - 1 });
-                setStatus('— ' + title + ': +' + appended + ' сообщений (всего ' + list.length + ')', 'ok');
-                ok++;
             } catch (err) {
                 failed++;
-                setStatus('— ' + title + ': ' + err.message, 'error');
+                setStatus('— ' + (character.name || '?') + ': ' + err.message, 'error');
             }
         }
     }
 
     return { ok, failed, skipped };
+}
+
+let autoSyncCounter = 0;
+let autoSyncRunning = false;
+
+async function autoSyncTick() {
+    const settings = getSettings();
+    if (!settings.autoSyncEnabled || !settings.token || !settings.chatsDb) {
+        return;
+    }
+    if (autoSyncRunning) {
+        return;
+    }
+
+    const every = Math.max(1, Number(settings.autoSyncEvery) || 10);
+    autoSyncCounter++;
+    if (autoSyncCounter < every) {
+        return;
+    }
+    autoSyncCounter = 0;
+
+    const context = getContext();
+    const character = context.characters && context.characters[context.characterId];
+    const chatFileId = context.chatId;
+
+    if (!character || !character.avatar || !chatFileId) {
+        setStatus('🤖 Авто-синк: активный одиночный чат не найден — пропуск', 'muted');
+        return;
+    }
+
+    autoSyncRunning = true;
+    setBusy(true);
+    setStatus('🤖 Авто-синк: ' + every + ' сообщений → ' + (character.name || 'персонаж'), 'info');
+
+    try {
+        const result = await syncChatFile(character, { file_id: chatFileId }, settings);
+        if (result.status === 'updated') {
+            setStatus('🤖 Авто-синк: +' + result.appended + ' сообщений (всего ' + result.total + ')', 'ok');
+        } else if (result.status === 'skipped') {
+            setStatus('🤖 Авто-синк: без изменений', 'muted');
+        }
+    } catch (err) {
+        setStatus('🤖 Авто-синк: ' + err.message, 'error');
+    } finally {
+        autoSyncRunning = false;
+        setBusy(false);
+    }
 }
 
 const SYNC_FUNCTIONS = {
@@ -1166,6 +1223,21 @@ function bindUi() {
             persist();
         });
 
+    jQuery('#ls_auto_sync')
+        .prop('checked', Boolean(settings.autoSyncEnabled))
+        .on('change', function () {
+            settings.autoSyncEnabled = Boolean(jQuery(this).prop('checked'));
+            autoSyncCounter = 0;
+            persist();
+        });
+
+    jQuery('#ls_auto_every')
+        .val(settings.autoSyncEvery)
+        .on('input', function () {
+            settings.autoSyncEvery = Math.max(1, Number(jQuery(this).val()) || 1);
+            persist();
+        });
+
     jQuery('#ls_test').on('click', testConnection);
     jQuery('#ls_sync_all').on('click', syncAll);
     jQuery('#ls_create_dbs').on('click', createMissingDatabases);
@@ -1185,6 +1257,10 @@ function bindUi() {
             runCategory(category);
         }
     });
+}
+
+if (eventSource && event_types && event_types.MESSAGE_RECEIVED) {
+    eventSource.on(event_types.MESSAGE_RECEIVED, autoSyncTick);
 }
 
 jQuery(async function () {

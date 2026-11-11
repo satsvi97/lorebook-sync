@@ -18,7 +18,7 @@
                 <div id="ls_test" class="menu_button">Проверить связь</div>
                 <div id="ls_sync_all" class="menu_button">Синхронизировать всё</div>
                 <div id="ls_spinner" class="ls-spinner" aria-hidden="true" title="Идёт синхронизация">✦</div>
-                <span id="ls_version" class="ls-version" title="Версия расширения">v0.4.0</span>
+                <span id="ls_version" class="ls-version" title="Версия расширения">v0.5.0</span>
             </div>
 
             <div class="ls-actions ls-actions-second">
@@ -67,11 +67,11 @@
                 <div class="ls-row ls-nums">
                     <label class="ls-num">
                         <span>чатов на персонажа</span>
-                        <input id="ls_chat_limit" type="number" min="1" max="100">
+                        <input id="ls_chat_limit" class="text_pole" type="number" min="1" max="100">
                     </label>
                     <label class="ls-num">
                         <span>сообщений в чате</span>
-                        <input id="ls_msg_limit" type="number" min="1" max="5000">
+                        <input id="ls_msg_limit" class="text_pole" type="number" min="1" max="5000">
                     </label>
                 </div>
                 <label class="checkbox_label">
@@ -79,6 +79,23 @@
                     <span>перезаписывать чаты целиком</span>
                 </label>
             </div>
+
+            <div class="ls-cat">
+                <div class="ls-cat-head">
+                    <span>🤖 Авто-синхронизация</span>
+                </div>
+                <label class="checkbox_label">
+                    <input id="ls_auto_sync" type="checkbox">
+                    <span>авто-синхронизация активного чата</span>
+                </label>
+                <div class="ls-row ls-nums">
+                    <label class="ls-num">
+                        <span>каждые N сообщений</span>
+                        <input id="ls_auto_every" class="text_pole" type="number" min="1" max="1000">
+                    </label>
+                </div>
+            </div>
+
 
             <div id="ls_progress" class="ls-progress"></div>
             <div id="ls_log" class="ls-log"></div>

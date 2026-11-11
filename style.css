@@ -118,6 +118,20 @@
 .lorebook-sync-settings .ls-info { color: #9fb8ff; }
 .lorebook-sync-settings .ls-muted { color: #999999; }
 
+.lorebook-sync-settings input[type="number"] {
+    background-color: rgba(0, 0, 0, 0.45);
+    color: #e6e6fa;
+    border: 1px solid rgba(180, 170, 255, 0.35);
+    border-radius: 6px;
+    padding: 4px 6px;
+    color-scheme: dark;
+}
+
+.lorebook-sync-settings input[type="number"]:focus {
+    outline: none;
+    border-color: rgba(180, 170, 255, 0.8);
+}
+
 .lorebook-sync-settings .ls-spinner {
     display: none;
     margin-left: 2px;
