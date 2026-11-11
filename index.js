@@ -9,7 +9,7 @@ import { extension_settings, getContext } from '../../../extensions.js';
 import { getRequestHeaders } from '../../../../script.js';
 
 const MODULE_NAME = 'lorebook-sync';
-const EXT_VERSION = '0.3.0';
+const EXT_VERSION = '0.3.1';
 const NOTION_API = 'https://api.notion.com/v1';
 const NOTION_VERSION = '2022-06-28';
 
@@ -741,6 +741,28 @@ async function resolveParentPageId() {
     return null;
 }
 
+async function findDatabaseByTitle(title) {
+    const data = await notionRequest('/search', {
+        method: 'POST',
+        body: {
+            query: title,
+            filter: { value: 'database', property: 'object' },
+            page_size: 20,
+        },
+    });
+
+    const normalized = String(title).trim();
+    for (const item of (data.results || [])) {
+        const name = (item.title || []).map(function (part) {
+            return part.plain_text;
+        }).join('').trim();
+        if (name === normalized) {
+            return item.id;
+        }
+    }
+    return null;
+}
+
 async function createMissingDatabases() {
     const settings = getSettings();
     if (!settings.token) {
@@ -761,12 +783,20 @@ async function createMissingDatabases() {
     setProgress('Создаю базы Notion...');
 
     try {
-        const parentPageId = await resolveParentPageId();
-        if (!parentPageId) {
-            throw new Error('не нашла страницу-родителя. Укажите ID страницы Notion ниже.');
-        }
-
         for (const category of missing) {
+            const existing = await findDatabaseByTitle(DB_TITLES[category]);
+            if (existing) {
+                settings[DB_KEYS[category]] = existing.id;
+                jQuery('#ls_db_' + category).val(existing.id);
+                setStatus('= ' + DB_TITLES[category] + ': найдена готовая', 'info');
+                continue;
+            }
+
+            const parentPageId = await resolveParentPageId();
+            if (!parentPageId) {
+                throw new Error('не нашла страницу-родителя. Укажите ID страницы Notion ниже.');
+            }
+
             const created = await notionRequest('/databases', {
                 method: 'POST',
                 body: {
@@ -781,7 +811,7 @@ async function createMissingDatabases() {
         }
 
         persist();
-        setStatus('Готово: создано баз — ' + missing.length, 'ok');
+        setStatus('Готово: проверено категорий — ' + missing.length, 'ok');
     } catch (err) {
         setStatus('Не удалось создать базы: ' + err.message, 'error');
     } finally {
