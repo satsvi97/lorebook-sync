@@ -1,5 +1,5 @@
 /**
- * Lorebook Sync — SillyTavern extension
+ * Lorebook Sync вЂ” SillyTavern extension
  * Syncs lorebooks, characters, personas and chats to Notion databases.
  *
  * v0.2: four independent categories, each with its own Notion database.
@@ -9,7 +9,7 @@ import { extension_settings, getContext } from '../../../extensions.js';
 import { getRequestHeaders, eventSource, event_types } from '../../../../script.js';
 
 const MODULE_NAME = 'lorebook-sync';
-const EXT_VERSION = '0.8.0';
+const EXT_VERSION = '0.8.1';
 
 console.info('Lorebook Sync v' + EXT_VERSION + ' loaded');
 const NOTION_API = 'https://api.notion.com/v1';
@@ -26,44 +26,45 @@ const DB_KEYS = {
 };
 
 const CAT_LABELS = {
-    lorebooks: 'Лорбуки',
-    characters: 'Персонажи',
-    personas: 'Персоны',
-    chats: 'Чаты',
+    lorebooks: 'Р›РѕСЂР±СѓРєРё',
+    characters: 'РџРµСЂСЃРѕРЅР°Р¶Рё',
+    personas: 'РџРµСЂСЃРѕРЅС‹',
+    chats: 'Р§Р°С‚С‹',
 };
 
 const LANGS = ['ru', 'en', 'uk', 'sv'];
 
 const I18N = {
     ru: {
-        desc: 'Синхронизация данных SillyTavern в базы Notion.',
+        desc: 'РЎРёРЅС…СЂРѕРЅРёР·Р°С†РёСЏ РґР°РЅРЅС‹С… SillyTavern РІ Р±Р°Р·С‹ Notion.',
         show: 'Show',
         hide: 'Hide',
-        test: 'Проверить связь',
-        syncAll: 'Синхронизировать всё',
-        create: 'Создать недостающие базы',
-        parentLabel: 'ID страницы Notion для новых баз (необязательно)',
+        test: 'РџСЂРѕРІРµСЂРёС‚СЊ СЃРІСЏР·СЊ',
+        syncAll: 'РЎРёРЅС…СЂРѕРЅРёР·РёСЂРѕРІР°С‚СЊ РІСЃС‘',
+        create: 'РЎРѕР·РґР°С‚СЊ РЅРµРґРѕСЃС‚Р°СЋС‰РёРµ Р±Р°Р·С‹',
+        findDbs: 'рџ”Ќ РќР°Р№С‚Рё Р±Р°Р·С‹ РїРѕ РЅР°Р·РІР°РЅРёСЋ',
+        parentLabel: 'ID СЃС‚СЂР°РЅРёС†С‹ Notion РґР»СЏ РЅРѕРІС‹С… Р±Р°Р· (РЅРµРѕР±СЏР·Р°С‚РµР»СЊРЅРѕ)',
         parentPlaceholder: 'page id',
-        databases: 'Базы Notion',
-        lorebooks: '📚 Лорбуки',
-        characters: '🎭 Персонажи',
-        personas: '🧑 Персоны',
-        chats: '💬 Чаты',
-        includeEmpty: 'включать пустые лорбуки',
-        chatLimit: 'чатов на персонажа',
-        msgLimit: 'сообщений в чате',
-        rewriteChats: 'перезаписывать чаты целиком',
-        autoTitle: '🤖 Авто-синхронизация',
-        autoEnable: 'авто-синхронизация активного чата',
-        autoEvery: 'каждые N сообщений',
-        importTitle: '⬇ Импорт из Notion',
-        importOverwrite: 'перезаписывать существующее',
-        restoreLorebooks: 'Восстановить лорбуки',
-        restoreCharacters: 'Восстановить персонажей',
-        uploadAvatars: 'загружать аватары в карточки Notion',
-        exportTitle: '📦 Экспорт в Markdown (Obsidian)',
-        exportChats: 'включать чаты (может быть долго)',
-        exportButton: 'Скачать .md архив',
+        databases: 'Р‘Р°Р·С‹ Notion',
+        lorebooks: 'рџ“љ Р›РѕСЂР±СѓРєРё',
+        characters: 'рџЋ­ РџРµСЂСЃРѕРЅР°Р¶Рё',
+        personas: 'рџ§‘ РџРµСЂСЃРѕРЅС‹',
+        chats: 'рџ’¬ Р§Р°С‚С‹',
+        includeEmpty: 'РІРєР»СЋС‡Р°С‚СЊ РїСѓСЃС‚С‹Рµ Р»РѕСЂР±СѓРєРё',
+        chatLimit: 'С‡Р°С‚РѕРІ РЅР° РїРµСЂСЃРѕРЅР°Р¶Р°',
+        msgLimit: 'СЃРѕРѕР±С‰РµРЅРёР№ РІ С‡Р°С‚Рµ',
+        rewriteChats: 'РїРµСЂРµР·Р°РїРёСЃС‹РІР°С‚СЊ С‡Р°С‚С‹ С†РµР»РёРєРѕРј',
+        autoTitle: 'рџ¤– РђРІС‚Рѕ-СЃРёРЅС…СЂРѕРЅРёР·Р°С†РёСЏ',
+        autoEnable: 'Р°РІС‚Рѕ-СЃРёРЅС…СЂРѕРЅРёР·Р°С†РёСЏ Р°РєС‚РёРІРЅРѕРіРѕ С‡Р°С‚Р°',
+        autoEvery: 'РєР°Р¶РґС‹Рµ N СЃРѕРѕР±С‰РµРЅРёР№',
+        importTitle: 'в¬‡ РРјРїРѕСЂС‚ РёР· Notion',
+        importOverwrite: 'РїРµСЂРµР·Р°РїРёСЃС‹РІР°С‚СЊ СЃСѓС‰РµСЃС‚РІСѓСЋС‰РµРµ',
+        restoreLorebooks: 'Р’РѕСЃСЃС‚Р°РЅРѕРІРёС‚СЊ Р»РѕСЂР±СѓРєРё',
+        restoreCharacters: 'Р’РѕСЃСЃС‚Р°РЅРѕРІРёС‚СЊ РїРµСЂСЃРѕРЅР°Р¶РµР№',
+        uploadAvatars: 'Р·Р°РіСЂСѓР¶Р°С‚СЊ Р°РІР°С‚Р°СЂС‹ РІ РєР°СЂС‚РѕС‡РєРё Notion',
+        exportTitle: 'рџ“¦ Р­РєСЃРїРѕСЂС‚ РІ Markdown (Obsidian)',
+        exportChats: 'РІРєР»СЋС‡Р°С‚СЊ С‡Р°С‚С‹ (РјРѕР¶РµС‚ Р±С‹С‚СЊ РґРѕР»РіРѕ)',
+        exportButton: 'РЎРєР°С‡Р°С‚СЊ .md Р°СЂС…РёРІ',
         dbPlaceholder: 'database id',
     },
     en: {
@@ -73,59 +74,61 @@ const I18N = {
         test: 'Test connection',
         syncAll: 'Sync all',
         create: 'Create missing databases',
+        findDbs: 'Find databases by title',
         parentLabel: 'Notion page ID for new databases (optional)',
         parentPlaceholder: 'page id',
         databases: 'Notion databases',
-        lorebooks: '📚 Lorebooks',
-        characters: '🎭 Characters',
-        personas: '🧑 Personas',
-        chats: '💬 Chats',
+        lorebooks: 'рџ“љ Lorebooks',
+        characters: 'рџЋ­ Characters',
+        personas: 'рџ§‘ Personas',
+        chats: 'рџ’¬ Chats',
         includeEmpty: 'include empty lorebooks',
         chatLimit: 'chats per character',
         msgLimit: 'messages per chat',
         rewriteChats: 'rewrite chats fully',
-        autoTitle: '🤖 Auto-sync',
+        autoTitle: 'рџ¤– Auto-sync',
         autoEnable: 'auto-sync the active chat',
         autoEvery: 'every N messages',
-        importTitle: '⬇ Import from Notion',
+        importTitle: 'в¬‡ Import from Notion',
         importOverwrite: 'overwrite existing',
         restoreLorebooks: 'Restore lorebooks',
         restoreCharacters: 'Restore characters',
         uploadAvatars: 'upload avatars into Notion cards',
-        exportTitle: '📦 Export to Markdown (Obsidian)',
+        exportTitle: 'рџ“¦ Export to Markdown (Obsidian)',
         exportChats: 'include chats (can be slow)',
         exportButton: 'Download .md archive',
         dbPlaceholder: 'database id',
     },
     uk: {
-        desc: 'Синхронізація даних SillyTavern у бази Notion.',
+        desc: 'РЎРёРЅС…СЂРѕРЅС–Р·Р°С†С–СЏ РґР°РЅРёС… SillyTavern Сѓ Р±Р°Р·Рё Notion.',
         show: 'Show',
         hide: 'Hide',
-        test: 'Перевірити звʼязок',
-        syncAll: 'Синхронізувати все',
-        create: 'Створити відсутні бази',
-        parentLabel: 'ID сторінки Notion для нових баз (необовʼязково)',
+        test: 'РџРµСЂРµРІС–СЂРёС‚Рё Р·РІКјСЏР·РѕРє',
+        syncAll: 'РЎРёРЅС…СЂРѕРЅС–Р·СѓРІР°С‚Рё РІСЃРµ',
+        create: 'РЎС‚РІРѕСЂРёС‚Рё РІС–РґСЃСѓС‚РЅС– Р±Р°Р·Рё',
+        findDbs: 'рџ”Ќ Р—РЅР°Р№С‚Рё Р±Р°Р·Рё Р·Р° РЅР°Р·РІРѕСЋ',
+        parentLabel: 'ID СЃС‚РѕСЂС–РЅРєРё Notion РґР»СЏ РЅРѕРІРёС… Р±Р°Р· (РЅРµРѕР±РѕРІКјСЏР·РєРѕРІРѕ)',
         parentPlaceholder: 'page id',
-        databases: 'Бази Notion',
-        lorebooks: '📚 Лорбуки',
-        characters: '🎭 Персонажі',
-        personas: '🧑 Персони',
-        chats: '💬 Чати',
-        includeEmpty: 'включати порожні лорбуки',
-        chatLimit: 'чатів на персонажа',
-        msgLimit: 'повідомлень у чаті',
-        rewriteChats: 'перезаписувати чати повністю',
-        autoTitle: '🤖 Автосинхронізація',
-        autoEnable: 'автосинхронізація активного чату',
-        autoEvery: 'кожні N повідомлень',
-        importTitle: '⬇ Імпорт з Notion',
-        importOverwrite: 'перезаписувати наявне',
-        restoreLorebooks: 'Відновити лорбуки',
-        restoreCharacters: 'Відновити персонажів',
-        uploadAvatars: 'завантажувати аватари в картки Notion',
-        exportTitle: '📦 Експорт у Markdown (Obsidian)',
-        exportChats: 'включати чати (може бути довго)',
-        exportButton: 'Завантажити .md архів',
+        databases: 'Р‘Р°Р·Рё Notion',
+        lorebooks: 'рџ“љ Р›РѕСЂР±СѓРєРё',
+        characters: 'рџЋ­ РџРµСЂСЃРѕРЅР°Р¶С–',
+        personas: 'рџ§‘ РџРµСЂСЃРѕРЅРё',
+        chats: 'рџ’¬ Р§Р°С‚Рё',
+        includeEmpty: 'РІРєР»СЋС‡Р°С‚Рё РїРѕСЂРѕР¶РЅС– Р»РѕСЂР±СѓРєРё',
+        chatLimit: 'С‡Р°С‚С–РІ РЅР° РїРµСЂСЃРѕРЅР°Р¶Р°',
+        msgLimit: 'РїРѕРІС–РґРѕРјР»РµРЅСЊ Сѓ С‡Р°С‚С–',
+        rewriteChats: 'РїРµСЂРµР·Р°РїРёСЃСѓРІР°С‚Рё С‡Р°С‚Рё РїРѕРІРЅС–СЃС‚СЋ',
+        autoTitle: 'рџ¤– РђРІС‚РѕСЃРёРЅС…СЂРѕРЅС–Р·Р°С†С–СЏ',
+        autoEnable: 'Р°РІС‚РѕСЃРёРЅС…СЂРѕРЅС–Р·Р°С†С–СЏ Р°РєС‚РёРІРЅРѕРіРѕ С‡Р°С‚Сѓ',
+        autoEvery: 'РєРѕР¶РЅС– N РїРѕРІС–РґРѕРјР»РµРЅСЊ',
+        importTitle: 'в¬‡ Р†РјРїРѕСЂС‚ Р· Notion',
+        importOverwrite: 'РїРµСЂРµР·Р°РїРёСЃСѓРІР°С‚Рё РЅР°СЏРІРЅРµ',
+        restoreLorebooks: 'Р’С–РґРЅРѕРІРёС‚Рё Р»РѕСЂР±СѓРєРё',
+        restoreCharacters: 'Р’С–РґРЅРѕРІРёС‚Рё РїРµСЂСЃРѕРЅР°Р¶С–РІ',
+        uploadAvatars: 'Р·Р°РІР°РЅС‚Р°Р¶СѓРІР°С‚Рё Р°РІР°С‚Р°СЂРё РІ РєР°СЂС‚РєРё Notion',
+        exportTitle: 'рџ“¦ Р•РєСЃРїРѕСЂС‚ Сѓ Markdown (Obsidian)',
+        exportChats: 'РІРєР»СЋС‡Р°С‚Рё С‡Р°С‚Рё (РјРѕР¶Рµ Р±СѓС‚Рё РґРѕРІРіРѕ)',
+        exportButton: 'Р—Р°РІР°РЅС‚Р°Р¶РёС‚Рё .md Р°СЂС…С–РІ',
         dbPlaceholder: 'database id',
     },
     sv: {
@@ -135,26 +138,27 @@ const I18N = {
         test: 'Testa anslutning',
         syncAll: 'Synka allt',
         create: 'Skapa saknade databaser',
-        parentLabel: 'Notion-sid-ID för nya databaser (valfritt)',
+        findDbs: 'SГ¶k databaser efter namn',
+        parentLabel: 'Notion-sid-ID fГ¶r nya databaser (valfritt)',
         parentPlaceholder: 'page id',
         databases: 'Notion-databaser',
-        lorebooks: '📚 Lorebooks',
-        characters: '🎭 Karaktärer',
-        personas: '🧑 Personer',
-        chats: '💬 Chattar',
+        lorebooks: 'рџ“љ Lorebooks',
+        characters: 'рџЋ­ KaraktГ¤rer',
+        personas: 'рџ§‘ Personer',
+        chats: 'рџ’¬ Chattar',
         includeEmpty: 'inkludera tomma lorebooks',
-        chatLimit: 'chattar per karaktär',
+        chatLimit: 'chattar per karaktГ¤r',
         msgLimit: 'meddelanden per chatt',
-        rewriteChats: 'skriv över chattar helt',
-        autoTitle: '🤖 Autosynk',
+        rewriteChats: 'skriv Г¶ver chattar helt',
+        autoTitle: 'рџ¤– Autosynk',
         autoEnable: 'autosynka den aktiva chatten',
         autoEvery: 'var N:e meddelande',
-        importTitle: '⬇ Importera från Notion',
-        importOverwrite: 'skriv över befintliga',
-        restoreLorebooks: 'Återställ lorebooks',
-        restoreCharacters: 'Återställ karaktärer',
+        importTitle: 'в¬‡ Importera frГҐn Notion',
+        importOverwrite: 'skriv Г¶ver befintliga',
+        restoreLorebooks: 'Г…terstГ¤ll lorebooks',
+        restoreCharacters: 'Г…terstГ¤ll karaktГ¤rer',
         uploadAvatars: 'ladda upp avatarer till Notion-kort',
-        exportTitle: '📦 Exportera till Markdown (Obsidian)',
+        exportTitle: 'рџ“¦ Exportera till Markdown (Obsidian)',
         exportChats: 'inkludera chattar (kan ta tid)',
         exportButton: 'Ladda ner .md-arkiv',
         dbPlaceholder: 'database id',
@@ -254,7 +258,7 @@ function persist() {
 
 function shortId(id) {
     const value = String(id || '');
-    return value.length > 10 ? (value.slice(0, 8) + '…') : value;
+    return value.length > 10 ? (value.slice(0, 8) + 'вЂ¦') : value;
 }
 
 function setDbField(category, value) {
@@ -290,7 +294,7 @@ function setProgress(text) {
 }
 
 function setBusy(busy) {
-    jQuery('.ls-sync-btn, #ls_test, #ls_sync_all, #ls_create_dbs, #ls_restore_lorebooks, #ls_restore_characters, #ls_export_md')
+    jQuery('.ls-sync-btn, #ls_test, #ls_sync_all, #ls_create_dbs, #ls_find_dbs, #ls_restore_lorebooks, #ls_restore_characters, #ls_export_md')
         .toggleClass('disabled', busy)
         .attr('aria-disabled', busy ? 'true' : 'false');
     jQuery('#ls_spinner').toggleClass('visible', busy);
@@ -432,10 +436,10 @@ async function applyAvatar(pageId, url, label) {
     try {
         const uploadId = await uploadAvatarImage(url);
         await setPageAvatar(pageId, uploadId);
-        setStatus('🖼 ' + label + ': аватар загружен', 'ok');
+        setStatus('рџ–ј ' + label + ': Р°РІР°С‚Р°СЂ Р·Р°РіСЂСѓР¶РµРЅ', 'ok');
         return true;
     } catch (err) {
-        setStatus('🖼 ' + label + ': аватар пропущен — ' + err.message, 'muted');
+        setStatus('рџ–ј ' + label + ': Р°РІР°С‚Р°СЂ РїСЂРѕРїСѓС‰РµРЅ вЂ” ' + err.message, 'muted');
         return false;
     }
 }
@@ -472,13 +476,13 @@ async function ensureSyncProperty(databaseId) {
 }
 
 function encodeMarker(data) {
-    return '⟦ls:v1 ' + Object.keys(data).map(function (key) {
+    return 'вџ¦ls:v1 ' + Object.keys(data).map(function (key) {
         return key + '=' + data[key];
-    }).join(' ') + '⟧';
+    }).join(' ') + 'вџ§';
 }
 
 function parseMarker(text) {
-    const match = /^⟦ls:v1\s+(.+?)⟧$/.exec(String(text || '').trim());
+    const match = /^вџ¦ls:v1\s+(.+?)вџ§$/.exec(String(text || '').trim());
     if (!match) {
         return null;
     }
@@ -533,15 +537,15 @@ async function createPage(databaseId, title) {
 }
 
 function summaryLine(result) {
-    const parts = [result.ok + ' обновлено'];
+    const parts = [result.ok + ' РѕР±РЅРѕРІР»РµРЅРѕ'];
     if (result.skipped) {
-        parts.push(result.skipped + ' без изменений');
+        parts.push(result.skipped + ' Р±РµР· РёР·РјРµРЅРµРЅРёР№');
     }
-    parts.push(result.failed + ' ошибок');
+    parts.push(result.failed + ' РѕС€РёР±РѕРє');
     return parts.join(', ');
 }
 
-const SNAPSHOT_PREFIX = '⟦ls-snapshot:v1 ';
+const SNAPSHOT_PREFIX = 'вџ¦ls-snapshot:v1 ';
 
 const CHARACTER_FIELDS = [
     'description',
@@ -559,7 +563,7 @@ function snapshotBlock(kind, payload) {
     for (const key of Object.keys(payload || {})) {
         data[key] = payload[key];
     }
-    const text = SNAPSHOT_PREFIX + JSON.stringify(data) + '⟧';
+    const text = SNAPSHOT_PREFIX + JSON.stringify(data) + 'вџ§';
     return {
         object: 'block',
         type: 'code',
@@ -599,7 +603,7 @@ async function readSnapshot(pageId) {
         if (block.type !== 'code' || !block.text.startsWith(SNAPSHOT_PREFIX)) {
             continue;
         }
-        const end = block.text.lastIndexOf('⟧');
+        const end = block.text.lastIndexOf('вџ§');
         if (end < SNAPSHOT_PREFIX.length) {
             continue;
         }
@@ -834,7 +838,7 @@ function entryBlocks(entries) {
         const entry = entries[uid] || {};
         const primaryKeys = [entry.key, entry.keysecondary].filter(Boolean).join(', ');
         const label = (entry.comment && String(entry.comment).trim()) || primaryKeys || ('Entry ' + uid);
-        const heading = primaryKeys && entry.comment ? (label + ' — ' + primaryKeys) : label;
+        const heading = primaryKeys && entry.comment ? (label + ' вЂ” ' + primaryKeys) : label;
 
         blocks.push(headingBlock(heading));
 
@@ -857,14 +861,14 @@ function entryBlocks(entries) {
 function characterBlocks(character) {
     const blocks = [];
     const sections = [
-        ['Описание', character.description],
-        ['Личность', character.personality],
-        ['Сценарий', character.scenario],
-        ['Первое сообщение', character.first_mes],
-        ['Примеры диалога', character.mes_example],
-        ['Заметки автора', character.creator_notes],
-        ['Системный промпт', character.system_prompt],
-        ['Пост-инструкции', character.post_history_instructions],
+        ['РћРїРёСЃР°РЅРёРµ', character.description],
+        ['Р›РёС‡РЅРѕСЃС‚СЊ', character.personality],
+        ['РЎС†РµРЅР°СЂРёР№', character.scenario],
+        ['РџРµСЂРІРѕРµ СЃРѕРѕР±С‰РµРЅРёРµ', character.first_mes],
+        ['РџСЂРёРјРµСЂС‹ РґРёР°Р»РѕРіР°', character.mes_example],
+        ['Р—Р°РјРµС‚РєРё Р°РІС‚РѕСЂР°', character.creator_notes],
+        ['РЎРёСЃС‚РµРјРЅС‹Р№ РїСЂРѕРјРїС‚', character.system_prompt],
+        ['РџРѕСЃС‚-РёРЅСЃС‚СЂСѓРєС†РёРё', character.post_history_instructions],
     ];
 
     for (const pair of sections) {
@@ -880,17 +884,17 @@ function characterBlocks(character) {
         ? character.alternate_greetings.filter(Boolean)
         : [];
     if (greetings.length) {
-        blocks.push(headingBlock('Альтернативные приветствия (' + greetings.length + ')'));
+        blocks.push(headingBlock('РђР»СЊС‚РµСЂРЅР°С‚РёРІРЅС‹Рµ РїСЂРёРІРµС‚СЃС‚РІРёСЏ (' + greetings.length + ')'));
         greetings.forEach(function (greeting, index) {
             blocks.push(paragraphBlock((index + 1) + '. ' + greeting, false));
         });
     }
 
     if (Array.isArray(character.tags) && character.tags.length) {
-        blocks.push(paragraphBlock('Теги: ' + character.tags.join(', '), true));
+        blocks.push(paragraphBlock('РўРµРіРё: ' + character.tags.join(', '), true));
     }
     if (character.avatar) {
-        blocks.push(paragraphBlock('Аватар: ' + character.avatar, true));
+        blocks.push(paragraphBlock('РђРІР°С‚Р°СЂ: ' + character.avatar, true));
     }
 
     return blocks;
@@ -900,14 +904,14 @@ function personaBlocks(avatar, name, description) {
     const blocks = [];
     const info = description || {};
     if (info.title) {
-        blocks.push(paragraphBlock('Заголовок: ' + info.title, true));
+        blocks.push(paragraphBlock('Р—Р°РіРѕР»РѕРІРѕРє: ' + info.title, true));
     }
     const text = (info.description || '').trim();
     if (text) {
-        blocks.push(headingBlock('Описание'));
+        blocks.push(headingBlock('РћРїРёСЃР°РЅРёРµ'));
         blocks.push(paragraphBlock(text, false));
     }
-    blocks.push(paragraphBlock('Аватар: ' + avatar, true));
+    blocks.push(paragraphBlock('РђРІР°С‚Р°СЂ: ' + avatar, true));
     return blocks;
 }
 
@@ -919,7 +923,7 @@ function chatBlocks(messages, limit) {
     const blocks = [];
 
     if (limit > 0 && list.length > limit) {
-        blocks.push(paragraphBlock('Показаны последние ' + limit + ' из ' + list.length + ' сообщений.', true));
+        blocks.push(paragraphBlock('РџРѕРєР°Р·Р°РЅС‹ РїРѕСЃР»РµРґРЅРёРµ ' + limit + ' РёР· ' + list.length + ' СЃРѕРѕР±С‰РµРЅРёР№.', true));
     }
 
     for (const message of tail) {
@@ -938,7 +942,7 @@ async function syncLorebooks() {
     await ensureSyncProperty(settings.lorebooksDb);
 
     const books = await listLorebooks();
-    setStatus('Лорбуки: найдено ' + books.length, 'info');
+    setStatus('Р›РѕСЂР±СѓРєРё: РЅР°Р№РґРµРЅРѕ ' + books.length, 'info');
 
     let ok = 0;
     let failed = 0;
@@ -951,7 +955,7 @@ async function syncLorebooks() {
             const count = Object.keys(entries).length;
 
             if (count === 0 && !settings.includeEmpty) {
-                setStatus('— ' + book.name + ': пустой, пропуск', 'muted');
+                setStatus('вЂ” ' + book.name + ': РїСѓСЃС‚РѕР№, РїСЂРѕРїСѓСЃРє', 'muted');
                 skipped++;
                 continue;
             }
@@ -963,7 +967,7 @@ async function syncLorebooks() {
             if (existing) {
                 const marker = readMarker(existing);
                 if (marker && marker.kind === 'lorebook' && marker.hash === signature && marker.snap === '1') {
-                    setStatus('— ' + book.name + ': без изменений', 'muted');
+                    setStatus('вЂ” ' + book.name + ': Р±РµР· РёР·РјРµРЅРµРЅРёР№', 'muted');
                     skipped++;
                     continue;
                 }
@@ -972,11 +976,11 @@ async function syncLorebooks() {
             const pageId = await upsertPage(settings.lorebooksDb, book.name, blocks);
             await appendBlocks(pageId, [snapshotBlock('lorebook', { name: book.name, entries })]);
             await writeMarker(pageId, { kind: 'lorebook', hash: signature, snap: 1 });
-            setStatus('— ' + book.name + ': ' + count + ' записей', 'ok');
+            setStatus('вЂ” ' + book.name + ': ' + count + ' Р·Р°РїРёСЃРµР№', 'ok');
             ok++;
         } catch (err) {
             failed++;
-            setStatus('— ' + book.name + ': ' + err.message, 'error');
+            setStatus('вЂ” ' + book.name + ': ' + err.message, 'error');
         }
     }
 
@@ -988,7 +992,7 @@ async function syncCharacters() {
     await ensureSyncProperty(settings.charactersDb);
 
     const characters = getContext().characters || [];
-    setStatus('Персонажи: найдено ' + characters.length, 'info');
+    setStatus('РџРµСЂСЃРѕРЅР°Р¶Рё: РЅР°Р№РґРµРЅРѕ ' + characters.length, 'info');
 
     let ok = 0;
     let failed = 0;
@@ -1007,7 +1011,7 @@ async function syncCharacters() {
             const needsAvatar = Boolean(settings.uploadAvatars && (!marker || marker.av !== '1'));
 
             if (unchanged && !needsAvatar) {
-                setStatus('— ' + name + ': без изменений', 'muted');
+                setStatus('вЂ” ' + name + ': Р±РµР· РёР·РјРµРЅРµРЅРёР№', 'muted');
                 skipped++;
                 continue;
             }
@@ -1017,7 +1021,7 @@ async function syncCharacters() {
                 if (done) {
                     await writeMarker(existing.id, { kind: 'character', hash: signature, snap: 1, av: 1 });
                 }
-                setStatus('— ' + name + ': контент без изменений', 'muted');
+                setStatus('вЂ” ' + name + ': РєРѕРЅС‚РµРЅС‚ Р±РµР· РёР·РјРµРЅРµРЅРёР№', 'muted');
                 skipped++;
                 continue;
             }
@@ -1040,11 +1044,11 @@ async function syncCharacters() {
                 snap: 1,
                 av: avatarDone ? 1 : 0,
             });
-            setStatus('— ' + name + ': обновлён', 'ok');
+            setStatus('вЂ” ' + name + ': РѕР±РЅРѕРІР»С‘РЅ', 'ok');
             ok++;
         } catch (err) {
             failed++;
-            setStatus('— ' + (character.name || '?') + ': ' + err.message, 'error');
+            setStatus('вЂ” ' + (character.name || '?') + ': ' + err.message, 'error');
         }
     }
 
@@ -1060,7 +1064,7 @@ async function syncPersonas() {
     const descriptions = powerUser.persona_descriptions || {};
     const avatars = Object.keys(personas);
 
-    setStatus('Персоны: найдено ' + avatars.length, 'info');
+    setStatus('РџРµСЂСЃРѕРЅС‹: РЅР°Р№РґРµРЅРѕ ' + avatars.length, 'info');
 
     let ok = 0;
     let failed = 0;
@@ -1079,7 +1083,7 @@ async function syncPersonas() {
             const needsAvatar = Boolean(settings.uploadAvatars && (!marker || marker.av !== '1'));
 
             if (unchanged && !needsAvatar) {
-                setStatus('— ' + name + ': без изменений', 'muted');
+                setStatus('вЂ” ' + name + ': Р±РµР· РёР·РјРµРЅРµРЅРёР№', 'muted');
                 skipped++;
                 continue;
             }
@@ -1089,7 +1093,7 @@ async function syncPersonas() {
                 if (done) {
                     await writeMarker(existing.id, { kind: 'persona', hash: signature, av: 1 });
                 }
-                setStatus('— ' + name + ': контент без изменений', 'muted');
+                setStatus('вЂ” ' + name + ': РєРѕРЅС‚РµРЅС‚ Р±РµР· РёР·РјРµРЅРµРЅРёР№', 'muted');
                 skipped++;
                 continue;
             }
@@ -1102,11 +1106,11 @@ async function syncPersonas() {
             }
 
             await writeMarker(pageId, { kind: 'persona', hash: signature, av: avatarDone ? 1 : 0 });
-            setStatus('— ' + name + ': обновлён', 'ok');
+            setStatus('вЂ” ' + name + ': РѕР±РЅРѕРІР»С‘РЅ', 'ok');
             ok++;
         } catch (err) {
             failed++;
-            setStatus('— ' + name + ': ' + err.message, 'error');
+            setStatus('вЂ” ' + name + ': ' + err.message, 'error');
         }
     }
 
@@ -1124,7 +1128,7 @@ function chatBlocksFrom(list, from, to) {
 }
 
 async function syncChatFile(character, file, settings) {
-    const title = (character.name || 'Unnamed') + ' — ' + file.file_id;
+    const title = (character.name || 'Unnamed') + ' вЂ” ' + file.file_id;
     const messages = await readChat(character, file);
     const list = messages.filter(function (message) {
         return message && typeof message.mes === 'string' && message.mes.trim().length > 0;
@@ -1177,7 +1181,7 @@ async function syncChats() {
     await ensureSyncProperty(settings.chatsDb);
 
     const characters = getContext().characters || [];
-    setStatus('Чаты: персонажей ' + characters.length, 'info');
+    setStatus('Р§Р°С‚С‹: РїРµСЂСЃРѕРЅР°Р¶РµР№ ' + characters.length, 'info');
 
     let ok = 0;
     let failed = 0;
@@ -1188,7 +1192,7 @@ async function syncChats() {
         try {
             chats = await listCharacterChats(character);
         } catch (err) {
-            setStatus('— ' + character.name + ': список чатов недоступен', 'error');
+            setStatus('вЂ” ' + character.name + ': СЃРїРёСЃРѕРє С‡Р°С‚РѕРІ РЅРµРґРѕСЃС‚СѓРїРµРЅ', 'error');
             failed++;
             continue;
         }
@@ -1206,15 +1210,15 @@ async function syncChats() {
             try {
                 const result = await syncChatFile(character, file, settings);
                 if (result.status === 'skipped') {
-                    setStatus('— ' + result.title + ': без изменений (' + result.total + ')', 'muted');
+                    setStatus('вЂ” ' + result.title + ': Р±РµР· РёР·РјРµРЅРµРЅРёР№ (' + result.total + ')', 'muted');
                     skipped++;
                 } else if (result.status === 'updated') {
-                    setStatus('— ' + result.title + ': +' + result.appended + ' сообщений (всего ' + result.total + ')', 'ok');
+                    setStatus('вЂ” ' + result.title + ': +' + result.appended + ' СЃРѕРѕР±С‰РµРЅРёР№ (РІСЃРµРіРѕ ' + result.total + ')', 'ok');
                     ok++;
                 }
             } catch (err) {
                 failed++;
-                setStatus('— ' + (character.name || '?') + ': ' + err.message, 'error');
+                setStatus('вЂ” ' + (character.name || '?') + ': ' + err.message, 'error');
             }
         }
     }
@@ -1245,23 +1249,23 @@ async function autoSyncTick() {
     const chatFileId = context.chatId;
 
     if (!character || !character.avatar || !chatFileId) {
-        setStatus('🤖 Авто-синк: активный одиночный чат не найден — пропуск', 'muted');
+        setStatus('рџ¤– РђРІС‚Рѕ-СЃРёРЅРє: Р°РєС‚РёРІРЅС‹Р№ РѕРґРёРЅРѕС‡РЅС‹Р№ С‡Р°С‚ РЅРµ РЅР°Р№РґРµРЅ вЂ” РїСЂРѕРїСѓСЃРє', 'muted');
         return;
     }
 
     autoSyncRunning = true;
     setBusy(true);
-    setStatus('🤖 Авто-синк: ' + every + ' сообщений → ' + (character.name || 'персонаж'), 'info');
+    setStatus('рџ¤– РђРІС‚Рѕ-СЃРёРЅРє: ' + every + ' СЃРѕРѕР±С‰РµРЅРёР№ в†’ ' + (character.name || 'РїРµСЂСЃРѕРЅР°Р¶'), 'info');
 
     try {
         const result = await syncChatFile(character, { file_id: chatFileId }, settings);
         if (result.status === 'updated') {
-            setStatus('🤖 Авто-синк: +' + result.appended + ' сообщений (всего ' + result.total + ')', 'ok');
+            setStatus('рџ¤– РђРІС‚Рѕ-СЃРёРЅРє: +' + result.appended + ' СЃРѕРѕР±С‰РµРЅРёР№ (РІСЃРµРіРѕ ' + result.total + ')', 'ok');
         } else if (result.status === 'skipped') {
-            setStatus('🤖 Авто-синк: без изменений', 'muted');
+            setStatus('рџ¤– РђРІС‚Рѕ-СЃРёРЅРє: Р±РµР· РёР·РјРµРЅРµРЅРёР№', 'muted');
         }
     } catch (err) {
-        setStatus('🤖 Авто-синк: ' + err.message, 'error');
+        setStatus('рџ¤– РђРІС‚Рѕ-СЃРёРЅРє: ' + err.message, 'error');
     } finally {
         autoSyncRunning = false;
         setBusy(false);
@@ -1278,28 +1282,28 @@ const SYNC_FUNCTIONS = {
 async function runCategory(category) {
     const settings = getSettings();
     if (!settings.token) {
-        setStatus('Сначала укажите Notion integration token.', 'error');
+        setStatus('РЎРЅР°С‡Р°Р»Р° СѓРєР°Р¶РёС‚Рµ Notion integration token.', 'error');
         return;
     }
     if (!settings[DB_KEYS[category]]) {
-        setStatus(CAT_LABELS[category] + ': укажите database ID.', 'error');
+        setStatus(CAT_LABELS[category] + ': СѓРєР°Р¶РёС‚Рµ database ID.', 'error');
         return;
     }
 
     setBusy(true);
-    setProgress('Синхронизация: ' + CAT_LABELS[category] + '...');
-    setStatus('▶ ' + CAT_LABELS[category] + ': старт (база ' + shortId(settings[DB_KEYS[category]]) + ')', 'info');
+    setProgress('РЎРёРЅС…СЂРѕРЅРёР·Р°С†РёСЏ: ' + CAT_LABELS[category] + '...');
+    setStatus('в–¶ ' + CAT_LABELS[category] + ': СЃС‚Р°СЂС‚ (Р±Р°Р·Р° ' + shortId(settings[DB_KEYS[category]]) + ')', 'info');
 
     try {
         const result = await SYNC_FUNCTIONS[category]();
         settings.lastSync = new Date().toISOString();
         persist();
         setStatus(
-            CAT_LABELS[category] + ': готово — ' + summaryLine(result),
+            CAT_LABELS[category] + ': РіРѕС‚РѕРІРѕ вЂ” ' + summaryLine(result),
             result.failed > 0 ? 'error' : 'ok',
         );
     } catch (err) {
-        setStatus(CAT_LABELS[category] + ': ошибка — ' + err.message, 'error');
+        setStatus(CAT_LABELS[category] + ': РѕС€РёР±РєР° вЂ” ' + err.message, 'error');
     } finally {
         setProgress('');
         setBusy(false);
@@ -1309,7 +1313,7 @@ async function runCategory(category) {
 async function syncAll() {
     const settings = getSettings();
     if (!settings.token) {
-        setStatus('Сначала укажите Notion integration token.', 'error');
+        setStatus('РЎРЅР°С‡Р°Р»Р° СѓРєР°Р¶РёС‚Рµ Notion integration token.', 'error');
         return;
     }
 
@@ -1318,54 +1322,54 @@ async function syncAll() {
     });
 
     if (!categories.length) {
-        setStatus('Не указана ни одна база Notion.', 'error');
+        setStatus('РќРµ СѓРєР°Р·Р°РЅР° РЅРё РѕРґРЅР° Р±Р°Р·Р° Notion.', 'error');
         return;
     }
 
     setBusy(true);
-    setStatus('▶ Синхронизация всех категорий: старт (' + categories.length + ')', 'info');
-    setStatus('⏳ Это может занять несколько минут — не закрывайте вкладку.', 'muted');
+    setStatus('в–¶ РЎРёРЅС…СЂРѕРЅРёР·Р°С†РёСЏ РІСЃРµС… РєР°С‚РµРіРѕСЂРёР№: СЃС‚Р°СЂС‚ (' + categories.length + ')', 'info');
+    setStatus('вЏі Р­С‚Рѕ РјРѕР¶РµС‚ Р·Р°РЅСЏС‚СЊ РЅРµСЃРєРѕР»СЊРєРѕ РјРёРЅСѓС‚ вЂ” РЅРµ Р·Р°РєСЂС‹РІР°Р№С‚Рµ РІРєР»Р°РґРєСѓ.', 'muted');
 
     let totalOk = 0;
     let totalFailed = 0;
 
     try {
         for (const category of categories) {
-            setProgress('Синхронизация: ' + CAT_LABELS[category] + '...');
-            setStatus('▶ ' + CAT_LABELS[category] + ': старт (база ' + shortId(settings[DB_KEYS[category]]) + ')', 'info');
+            setProgress('РЎРёРЅС…СЂРѕРЅРёР·Р°С†РёСЏ: ' + CAT_LABELS[category] + '...');
+            setStatus('в–¶ ' + CAT_LABELS[category] + ': СЃС‚Р°СЂС‚ (Р±Р°Р·Р° ' + shortId(settings[DB_KEYS[category]]) + ')', 'info');
             try {
                 const result = await SYNC_FUNCTIONS[category]();
                 totalOk += result.ok;
                 totalFailed += result.failed;
                 setStatus(
-                    CAT_LABELS[category] + ': готово — ' + summaryLine(result),
+                    CAT_LABELS[category] + ': РіРѕС‚РѕРІРѕ вЂ” ' + summaryLine(result),
                     result.failed > 0 ? 'error' : 'ok',
                 );
             } catch (err) {
                 totalFailed++;
-                setStatus(CAT_LABELS[category] + ': ошибка — ' + err.message, 'error');
+                setStatus(CAT_LABELS[category] + ': РѕС€РёР±РєР° вЂ” ' + err.message, 'error');
             }
         }
 
         settings.lastSync = new Date().toISOString();
         persist();
         setStatus(
-            'Всё готово — ' + totalOk + ' страниц, ' + totalFailed + ' ошибок.',
+            'Р’СЃС‘ РіРѕС‚РѕРІРѕ вЂ” ' + totalOk + ' СЃС‚СЂР°РЅРёС†, ' + totalFailed + ' РѕС€РёР±РѕРє.',
             totalFailed > 0 ? 'error' : 'ok',
         );
     } catch (err) {
-        setStatus('Синхронизация прервана: ' + err.message, 'error');
+        setStatus('РЎРёРЅС…СЂРѕРЅРёР·Р°С†РёСЏ РїСЂРµСЂРІР°РЅР°: ' + err.message, 'error');
     } finally {
         setProgress('');
         setBusy(false);
-        setStatus('⏹ Синхронизация завершена, кнопки снова активны.', 'muted');
+        setStatus('вЏ№ РЎРёРЅС…СЂРѕРЅРёР·Р°С†РёСЏ Р·Р°РІРµСЂС€РµРЅР°, РєРЅРѕРїРєРё СЃРЅРѕРІР° Р°РєС‚РёРІРЅС‹.', 'muted');
     }
 }
 
 async function testConnection() {
     const settings = getSettings();
     if (!settings.token) {
-        setStatus('Введите Notion integration token.', 'error');
+        setStatus('Р’РІРµРґРёС‚Рµ Notion integration token.', 'error');
         return;
     }
 
@@ -1378,7 +1382,7 @@ async function testConnection() {
         for (const category of Object.keys(DB_KEYS)) {
             const databaseId = settings[DB_KEYS[category]];
             if (!databaseId) {
-                setStatus(CAT_LABELS[category] + ': база не указана', 'muted');
+                setStatus(CAT_LABELS[category] + ': Р±Р°Р·Р° РЅРµ СѓРєР°Р·Р°РЅР°', 'muted');
                 continue;
             }
             try {
@@ -1386,24 +1390,178 @@ async function testConnection() {
                 const title = (db.title || []).map(function (part) {
                     return part.plain_text;
                 }).join('');
-                setStatus(CAT_LABELS[category] + ': ' + (title || databaseId) + ' — ок', 'ok');
+                setStatus(CAT_LABELS[category] + ': ' + (title || databaseId) + ' вЂ” РѕРє', 'ok');
             } catch (err) {
                 setStatus(CAT_LABELS[category] + ': ' + err.message, 'error');
             }
         }
     } catch (err) {
-        setStatus('Ошибка подключения: ' + err.message, 'error');
+        setStatus('РћС€РёР±РєР° РїРѕРґРєР»СЋС‡РµРЅРёСЏ: ' + err.message, 'error');
     } finally {
         setBusy(false);
     }
 }
 
 const DB_TITLES = {
-    lorebooks: '✦ Lorebooks ✦',
-    characters: '✦ Characters ✦',
-    personas: '✦ Personas ✦',
-    chats: '✦ Chats ✦',
+    lorebooks: 'вњ¦ Lorebooks вњ¦',
+    characters: 'вњ¦ Characters вњ¦',
+    personas: 'вњ¦ Personas вњ¦',
+    chats: 'вњ¦ Chats вњ¦',
 };
+
+/**
+ * Words that identify a category even if the database was renamed
+ * (for example "вњ¦ Lorebook Sync вњ¦" instead of "вњ¦ Lorebooks вњ¦").
+ */
+const DB_MATCH_KEYS = {
+    lorebooks: ['lorebook'],
+    characters: ['character'],
+    personas: ['persona'],
+    chats: ['chat'],
+};
+
+let databaseListCache = null;
+
+function normalizeTitle(value) {
+    return String(value == null ? '' : value)
+        .toLowerCase()
+        .replace(/[^\p{L}\p{N}]+/gu, '');
+}
+
+async function listAllDatabases() {
+    if (databaseListCache) {
+        return databaseListCache;
+    }
+
+    const items = [];
+    let cursor = undefined;
+
+    for (;;) {
+        const body = { filter: { value: 'database', property: 'object' }, page_size: 100 };
+        if (cursor) {
+            body.start_cursor = cursor;
+        }
+        const data = await notionRequest('/search', { method: 'POST', body });
+        for (const item of (data.results || [])) {
+            items.push({
+                id: item.id,
+                title: (item.title || []).map(function (part) {
+                    return part.plain_text || '';
+                }).join('').trim(),
+            });
+        }
+        if (!data.has_more) {
+            break;
+        }
+        cursor = data.next_cursor;
+    }
+
+    databaseListCache = items;
+    return items;
+}
+
+function matchDatabase(category, databases) {
+    const wanted = normalizeTitle(DB_TITLES[category]);
+    const exact = databases.find(function (db) {
+        return normalizeTitle(db.title) === wanted;
+    });
+    if (exact) {
+        return { db: exact, how: 'exact' };
+    }
+
+    const keys = DB_MATCH_KEYS[category];
+    const loose = databases.filter(function (db) {
+        const name = normalizeTitle(db.title);
+        return Boolean(name) && keys.some(function (key) {
+            return name.includes(key);
+        });
+    });
+
+    if (loose.length === 1) {
+        return { db: loose[0], how: 'loose' };
+    }
+    if (loose.length > 1) {
+        return { ambiguous: loose };
+    }
+    return null;
+}
+
+/**
+ * Fill empty database fields from what the integration can see.
+ * Never creates anything and never overwrites a configured id.
+ */
+async function findDatabasesByTitle() {
+    const settings = getSettings();
+    if (!settings.token) {
+        setStatus('РЎРЅР°С‡Р°Р»Р° СѓРєР°Р¶РёС‚Рµ Notion integration token.', 'error');
+        return;
+    }
+
+    const empty = Object.keys(DB_KEYS).filter(function (category) {
+        return !settings[DB_KEYS[category]];
+    });
+
+    if (!empty.length) {
+        setStatus('рџ”Ќ Р’СЃРµ С‡РµС‚С‹СЂРµ Р±Р°Р·С‹ СѓР¶Рµ СѓРєР°Р·Р°РЅС‹ вЂ” РёСЃРєР°С‚СЊ РЅРµС‡РµРіРѕ.', 'muted');
+        return;
+    }
+
+    setBusy(true);
+    setStatus('рџ”Ќ РџРѕРёСЃРє Р±Р°Р· РІ Notion: СЃС‚Р°СЂС‚', 'info');
+
+    try {
+        databaseListCache = null;
+        const databases = await listAllDatabases();
+        setStatus('рџ”Ќ РРЅС‚РµРіСЂР°С†РёРё РІРёРґРЅС‹ Р±Р°Р·: ' + databases.length, 'info');
+
+        let found = 0;
+        let notFound = 0;
+
+        for (const category of empty) {
+            const match = matchDatabase(category, databases);
+
+            if (match && match.db) {
+                settings[DB_KEYS[category]] = match.db.id;
+                setDbField(category, match.db.id);
+                found++;
+                setStatus('вњ“ ' + CAT_LABELS[category] + ': ' + match.db.title
+                    + ' (' + shortId(match.db.id) + ')', 'ok');
+                continue;
+            }
+
+            notFound++;
+
+            if (match && match.ambiguous) {
+                const names = match.ambiguous.map(function (db) {
+                    return db.title || shortId(db.id);
+                }).join(', ');
+                setStatus('? ' + CAT_LABELS[category] + ': РЅРµСЃРєРѕР»СЊРєРѕ РїРѕРґС…РѕРґСЏС‰РёС… вЂ” ' + names, 'error');
+                continue;
+            }
+
+            setStatus('вњ— ' + CAT_LABELS[category] + ': Р±Р°Р·Р° РЅРµ РЅР°Р№РґРµРЅР°', 'error');
+        }
+
+        persist();
+
+        if (found) {
+            setStatus('рџ”Ќ Р“РѕС‚РѕРІРѕ: РїРѕРґСЃС‚Р°РІР»РµРЅРѕ ' + found
+                + (notFound ? ', РЅРµ РЅР°Р№РґРµРЅРѕ вЂ” ' + notFound : ''), 'ok');
+        } else {
+            setStatus('рџ”Ќ РќРёС‡РµРіРѕ РЅРµ РЅР°С€Р»Рё. РџСЂРѕРІРµСЂСЊС‚Рµ, С‡С‚Рѕ Р±Р°Р·Р° СЂР°СЃС€Р°СЂРµРЅР° РЅР° РёРЅС‚РµРіСЂР°С†РёСЋ:'
+                + ' Р±Р°Р·Р° в†’ вЂўвЂўвЂў в†’ Connections.', 'error');
+        }
+
+        if (notFound) {
+            setStatus('рџ”Ќ РќРµРґРѕСЃС‚Р°СЋС‰РёРµ Р±Р°Р·С‹ РјРѕР¶РЅРѕ СЃРѕР·РґР°С‚СЊ РєРЅРѕРїРєРѕР№ В«РЎРѕР·РґР°С‚СЊ РЅРµРґРѕСЃС‚Р°СЋС‰РёРµ Р±Р°Р·С‹В».', 'muted');
+        }
+    } catch (err) {
+        setStatus('рџ”Ќ РџРѕРёСЃРє: ' + err.message, 'error');
+    } finally {
+        setBusy(false);
+    }
+}
+
 
 /**
  * Databases live under a Notion page. Reuse the page of any configured
@@ -1431,32 +1589,10 @@ async function resolveParentPageId() {
     return null;
 }
 
-async function findDatabaseByTitle(title) {
-    const data = await notionRequest('/search', {
-        method: 'POST',
-        body: {
-            query: title,
-            filter: { value: 'database', property: 'object' },
-            page_size: 20,
-        },
-    });
-
-    const normalized = String(title).trim();
-    for (const item of (data.results || [])) {
-        const name = (item.title || []).map(function (part) {
-            return part.plain_text;
-        }).join('').trim();
-        if (name === normalized) {
-            return item.id;
-        }
-    }
-    return null;
-}
-
 async function createMissingDatabases() {
     const settings = getSettings();
     if (!settings.token) {
-        setStatus('Сначала укажите Notion integration token.', 'error');
+        setStatus('РЎРЅР°С‡Р°Р»Р° СѓРєР°Р¶РёС‚Рµ Notion integration token.', 'error');
         return;
     }
 
@@ -1465,27 +1601,38 @@ async function createMissingDatabases() {
     });
 
     if (!missing.length) {
-        setStatus('Все четыре базы уже указаны — создавать нечего.', 'muted');
+        setStatus('Р’СЃРµ С‡РµС‚С‹СЂРµ Р±Р°Р·С‹ СѓР¶Рµ СѓРєР°Р·Р°РЅС‹ вЂ” СЃРѕР·РґР°РІР°С‚СЊ РЅРµС‡РµРіРѕ.', 'muted');
         return;
     }
 
     setBusy(true);
-    setProgress('Создаю базы Notion...');
-    setStatus('▶ Создать недостающие базы: старт', 'info');
+    setProgress('РЎРѕР·РґР°СЋ Р±Р°Р·С‹ Notion...');
+    setStatus('в–¶ РЎРѕР·РґР°С‚СЊ РЅРµРґРѕСЃС‚Р°СЋС‰РёРµ Р±Р°Р·С‹: СЃС‚Р°СЂС‚', 'info');
 
     try {
         for (const category of missing) {
-            const existing = await findDatabaseByTitle(DB_TITLES[category]);
-            if (existing) {
-                settings[DB_KEYS[category]] = existing;
-                setDbField(category, existing);
-                setStatus('= ' + DB_TITLES[category] + ': найдена готовая (' + shortId(existing) + ')', 'info');
+            const match = matchDatabase(category, await listAllDatabases());
+
+            if (match && match.db) {
+                settings[DB_KEYS[category]] = match.db.id;
+                setDbField(category, match.db.id);
+                setStatus('= ' + (match.db.title || DB_TITLES[category]) + ': РЅР°Р№РґРµРЅР° РіРѕС‚РѕРІР°СЏ ('
+                    + shortId(match.db.id) + ')', 'info');
+                continue;
+            }
+
+            if (match && match.ambiguous) {
+                const names = match.ambiguous.map(function (db) {
+                    return db.title || shortId(db.id);
+                }).join(', ');
+                setStatus('? ' + CAT_LABELS[category] + ': РЅРµСЃРєРѕР»СЊРєРѕ РїРѕРґС…РѕРґСЏС‰РёС… Р±Р°Р· вЂ” ' + names
+                    + '. РЈРєР°Р¶РёС‚Рµ ID РІСЂСѓС‡РЅСѓСЋ.', 'error');
                 continue;
             }
 
             const parentPageId = await resolveParentPageId();
             if (!parentPageId) {
-                throw new Error('не нашла страницу-родителя. Укажите ID страницы Notion ниже.');
+                throw new Error('РЅРµ РЅР°С€Р»Р° СЃС‚СЂР°РЅРёС†Сѓ-СЂРѕРґРёС‚РµР»СЏ. РЈРєР°Р¶РёС‚Рµ ID СЃС‚СЂР°РЅРёС†С‹ Notion РЅРёР¶Рµ.');
             }
 
             const created = await notionRequest('/databases', {
@@ -1498,7 +1645,8 @@ async function createMissingDatabases() {
             });
             settings[DB_KEYS[category]] = created.id;
             setDbField(category, created.id);
-            setStatus('+ ' + DB_TITLES[category] + ': создана (' + shortId(created.id) + ')', 'ok');
+            databaseListCache = null;
+            setStatus('+ ' + DB_TITLES[category] + ': СЃРѕР·РґР°РЅР° (' + shortId(created.id) + ')', 'ok');
         }
 
         persist();
@@ -1506,12 +1654,12 @@ async function createMissingDatabases() {
         for (const category of missing) {
             const value = getSettings()[DB_KEYS[category]];
             setDbField(category, value || '');
-            setStatus('  ' + CAT_LABELS[category] + ': ' + (value ? shortId(value) : 'пусто'), value ? 'ok' : 'error');
+            setStatus('  ' + CAT_LABELS[category] + ': ' + (value ? shortId(value) : 'РїСѓСЃС‚Рѕ'), value ? 'ok' : 'error');
         }
 
-        setStatus('Готово: проверено категорий — ' + missing.length, 'ok');
+        setStatus('Р“РѕС‚РѕРІРѕ: РїСЂРѕРІРµСЂРµРЅРѕ РєР°С‚РµРіРѕСЂРёР№ вЂ” ' + missing.length, 'ok');
     } catch (err) {
-        setStatus('Не удалось создать базы: ' + err.message, 'error');
+        setStatus('РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕР·РґР°С‚СЊ Р±Р°Р·С‹: ' + err.message, 'error');
     } finally {
         setProgress('');
         setBusy(false);
@@ -1538,20 +1686,22 @@ async function autoFillMissingDatabases() {
         return;
     }
 
-    for (const category of missing) {
-        try {
-            const existing = await findDatabaseByTitle(DB_TITLES[category]);
-            if (existing) {
-                settings[DB_KEYS[category]] = existing;
-                setDbField(category, existing);
-                setStatus('Автопоиск: ' + CAT_LABELS[category] + ' → ' + shortId(existing), 'info');
+    try {
+        const databases = await listAllDatabases();
+        for (const category of missing) {
+            const match = matchDatabase(category, databases);
+            if (match && match.db) {
+                settings[DB_KEYS[category]] = match.db.id;
+                setDbField(category, match.db.id);
+                setStatus('РђРІС‚РѕРїРѕРёСЃРє: ' + CAT_LABELS[category] + ' в†’ ' + (match.db.title || shortId(match.db.id)), 'info');
             } else {
-                setStatus('Автопоиск: ' + CAT_LABELS[category] + ' не найдена — нажмите «Создать недостающие базы»', 'muted');
+                setStatus('РђРІС‚РѕРїРѕРёСЃРє: ' + CAT_LABELS[category]
+                    + ' РЅРµ РЅР°Р№РґРµРЅР° вЂ” РЅР°Р¶РјРёС‚Рµ В«РќР°Р№С‚Рё Р±Р°Р·С‹ РїРѕ РЅР°Р·РІР°РЅРёСЋВ»', 'muted');
             }
-        } catch (err) {
-            setStatus('Автопоиск ' + CAT_LABELS[category] + ': ' + err.message, 'error');
-            return;
         }
+    } catch (err) {
+        setStatus('РђРІС‚РѕРїРѕРёСЃРє: ' + err.message, 'error');
+        return;
     }
 
     persist();
@@ -1573,14 +1723,14 @@ async function restoreLorebooks() {
         try {
             const snapshot = await readSnapshot(page.id);
             if (!snapshot || snapshot.kind !== 'lorebook' || !snapshot.entries) {
-                setStatus('⬇ ' + title + ': нет снимка, пропуск', 'muted');
+                setStatus('в¬‡ ' + title + ': РЅРµС‚ СЃРЅРёРјРєР°, РїСЂРѕРїСѓСЃРє', 'muted');
                 skipped++;
                 continue;
             }
 
             const name = snapshot.name || title;
             if (!settings.importOverwrite && existing.has(name)) {
-                setStatus('⬇ ' + name + ': уже есть в Таверне, пропуск', 'muted');
+                setStatus('в¬‡ ' + name + ': СѓР¶Рµ РµСЃС‚СЊ РІ РўР°РІРµСЂРЅРµ, РїСЂРѕРїСѓСЃРє', 'muted');
                 skipped++;
                 continue;
             }
@@ -1594,11 +1744,11 @@ async function restoreLorebooks() {
                 throw new Error('worldinfo/edit: HTTP ' + response.status);
             }
 
-            setStatus('⬇ ' + name + ': восстановлен', 'ok');
+            setStatus('в¬‡ ' + name + ': РІРѕСЃСЃС‚Р°РЅРѕРІР»РµРЅ', 'ok');
             ok++;
         } catch (err) {
             failed++;
-            setStatus('⬇ ' + title + ': ' + err.message, 'error');
+            setStatus('в¬‡ ' + title + ': ' + err.message, 'error');
         }
     }
 
@@ -1619,7 +1769,7 @@ async function restoreCharacters() {
         try {
             const snapshot = await readSnapshot(page.id);
             if (!snapshot || snapshot.kind !== 'character' || !snapshot.fields) {
-                setStatus('⬇ ' + title + ': нет снимка, пропуск', 'muted');
+                setStatus('в¬‡ ' + title + ': РЅРµС‚ СЃРЅРёРјРєР°, РїСЂРѕРїСѓСЃРє', 'muted');
                 skipped++;
                 continue;
             }
@@ -1629,7 +1779,7 @@ async function restoreCharacters() {
                 return item.name === name;
             });
             if (!character) {
-                setStatus('⬇ ' + name + ': нет такого персонажа в Таверне, пропуск', 'muted');
+                setStatus('в¬‡ ' + name + ': РЅРµС‚ С‚Р°РєРѕРіРѕ РїРµСЂСЃРѕРЅР°Р¶Р° РІ РўР°РІРµСЂРЅРµ, РїСЂРѕРїСѓСЃРє', 'muted');
                 skipped++;
                 continue;
             }
@@ -1666,15 +1816,15 @@ async function restoreCharacters() {
             }
 
             if (changed > 0) {
-                setStatus('⬇ ' + name + ': обновлено полей — ' + changed, 'ok');
+                setStatus('в¬‡ ' + name + ': РѕР±РЅРѕРІР»РµРЅРѕ РїРѕР»РµР№ вЂ” ' + changed, 'ok');
                 ok++;
             } else {
-                setStatus('⬇ ' + name + ': без изменений', 'muted');
+                setStatus('в¬‡ ' + name + ': Р±РµР· РёР·РјРµРЅРµРЅРёР№', 'muted');
                 skipped++;
             }
         } catch (err) {
             failed++;
-            setStatus('⬇ ' + title + ': ' + err.message, 'error');
+            setStatus('в¬‡ ' + title + ': ' + err.message, 'error');
         }
     }
 
@@ -1684,25 +1834,25 @@ async function restoreCharacters() {
 async function runImport(category) {
     const settings = getSettings();
     if (!settings.token) {
-        setStatus('Сначала укажите Notion integration token.', 'error');
+        setStatus('РЎРЅР°С‡Р°Р»Р° СѓРєР°Р¶РёС‚Рµ Notion integration token.', 'error');
         return;
     }
 
     const databaseId = category === 'lorebooks' ? settings.lorebooksDb : settings.charactersDb;
     if (!databaseId) {
-        setStatus(CAT_LABELS[category] + ': укажите database ID.', 'error');
+        setStatus(CAT_LABELS[category] + ': СѓРєР°Р¶РёС‚Рµ database ID.', 'error');
         return;
     }
 
     setBusy(true);
-    setStatus('⬇ Импорт: ' + CAT_LABELS[category] + ' — старт', 'info');
+    setStatus('в¬‡ РРјРїРѕСЂС‚: ' + CAT_LABELS[category] + ' вЂ” СЃС‚Р°СЂС‚', 'info');
 
     try {
         const result = category === 'lorebooks' ? await restoreLorebooks() : await restoreCharacters();
-        setStatus('⬇ Импорт завершён: ' + summaryLine(result), result.failed > 0 ? 'error' : 'ok');
-        setStatus('⟳ Обновите страницу Таверны (F5), чтобы увидеть изменения.', 'muted');
+        setStatus('в¬‡ РРјРїРѕСЂС‚ Р·Р°РІРµСЂС€С‘РЅ: ' + summaryLine(result), result.failed > 0 ? 'error' : 'ok');
+        setStatus('вџі РћР±РЅРѕРІРёС‚Рµ СЃС‚СЂР°РЅРёС†Сѓ РўР°РІРµСЂРЅС‹ (F5), С‡С‚РѕР±С‹ СѓРІРёРґРµС‚СЊ РёР·РјРµРЅРµРЅРёСЏ.', 'muted');
     } catch (err) {
-        setStatus('⬇ Импорт: ' + err.message, 'error');
+        setStatus('в¬‡ РРјРїРѕСЂС‚: ' + err.message, 'error');
     } finally {
         setBusy(false);
     }
@@ -1889,7 +2039,7 @@ function notionBlocksToMarkdown(blocks) {
 async function exportDatabase(category, settings) {
     const databaseId = settings[DB_KEYS[category]];
     if (!databaseId) {
-        setStatus('📦 ' + CAT_LABELS[category] + ': database ID не задан — пропуск', 'muted');
+        setStatus('рџ“¦ ' + CAT_LABELS[category] + ': database ID РЅРµ Р·Р°РґР°РЅ вЂ” РїСЂРѕРїСѓСЃРє', 'muted');
         return { files: [], pages: 0 };
     }
 
@@ -1901,7 +2051,7 @@ async function exportDatabase(category, settings) {
     for (const page of pages) {
         done++;
         const title = pageTitle(page);
-        setProgress('📦 ' + CAT_LABELS[category] + ': ' + done + ' / ' + pages.length);
+        setProgress('рџ“¦ ' + CAT_LABELS[category] + ': ' + done + ' / ' + pages.length);
 
         let name = safeFileName(title);
         if (used.has(name)) {
@@ -1940,7 +2090,7 @@ async function exportDatabase(category, settings) {
 async function runExport() {
     const settings = getSettings();
     if (!settings.token) {
-        setStatus('Сначала укажите Notion integration token.', 'error');
+        setStatus('РЎРЅР°С‡Р°Р»Р° СѓРєР°Р¶РёС‚Рµ Notion integration token.', 'error');
         return;
     }
 
@@ -1950,7 +2100,7 @@ async function runExport() {
     }
 
     setBusy(true);
-    setStatus('📦 Экспорт в Markdown: старт', 'info');
+    setStatus('рџ“¦ Р­РєСЃРїРѕСЂС‚ РІ Markdown: СЃС‚Р°СЂС‚', 'info');
 
     try {
         const files = [];
@@ -1960,20 +2110,20 @@ async function runExport() {
             const result = await exportDatabase(category, settings);
             files.push.apply(files, result.files);
             totalPages += result.pages;
-            setStatus('📦 ' + CAT_LABELS[category] + ': страниц — ' + result.pages, 'ok');
+            setStatus('рџ“¦ ' + CAT_LABELS[category] + ': СЃС‚СЂР°РЅРёС† вЂ” ' + result.pages, 'ok');
         }
 
         if (files.length === 0) {
-            setStatus('📦 Нечего экспортировать: базы пусты.', 'muted');
+            setStatus('рџ“¦ РќРµС‡РµРіРѕ СЌРєСЃРїРѕСЂС‚РёСЂРѕРІР°С‚СЊ: Р±Р°Р·С‹ РїСѓСЃС‚С‹.', 'muted');
             return;
         }
 
         const stamp = new Date().toISOString().slice(0, 10);
         downloadBlob(buildZip(files), 'lorebook-sync-' + stamp + '.zip');
-        setStatus('📦 Готово: ' + files.length + ' файлов из ' + totalPages + ' страниц — архив скачан.', 'ok');
-        setStatus('📦 Распакуйте архив в папку vault Obsidian.', 'muted');
+        setStatus('рџ“¦ Р“РѕС‚РѕРІРѕ: ' + files.length + ' С„Р°Р№Р»РѕРІ РёР· ' + totalPages + ' СЃС‚СЂР°РЅРёС† вЂ” Р°СЂС…РёРІ СЃРєР°С‡Р°РЅ.', 'ok');
+        setStatus('рџ“¦ Р Р°СЃРїР°РєСѓР№С‚Рµ Р°СЂС…РёРІ РІ РїР°РїРєСѓ vault Obsidian.', 'muted');
     } catch (err) {
-        setStatus('📦 Экспорт: ' + err.message, 'error');
+        setStatus('рџ“¦ Р­РєСЃРїРѕСЂС‚: ' + err.message, 'error');
     } finally {
         setProgress('');
         setBusy(false);
@@ -2096,6 +2246,7 @@ function bindUi() {
     jQuery('#ls_test').on('click', testConnection);
     jQuery('#ls_sync_all').on('click', syncAll);
     jQuery('#ls_create_dbs').on('click', createMissingDatabases);
+    jQuery('#ls_find_dbs').on('click', findDatabasesByTitle);
 
     jQuery('#ls_version').text('v' + EXT_VERSION);
 
@@ -2134,7 +2285,7 @@ jQuery(async function () {
         );
         jQuery('#extensions_settings2').append(html);
         bindUi();
-        setStatus('Lorebook Sync v' + EXT_VERSION + ': готов', 'muted');
+        setStatus('Lorebook Sync v' + EXT_VERSION + ': РіРѕС‚РѕРІ', 'muted');
         console.log('Lorebook Sync: ready v' + EXT_VERSION);
         autoFillMissingDatabases();
     } catch (err) {
