@@ -9,7 +9,7 @@ import { extension_settings, getContext } from '../../../extensions.js';
 import { getRequestHeaders, eventSource, event_types } from '../../../../script.js';
 
 const MODULE_NAME = 'lorebook-sync';
-const EXT_VERSION = '0.8.1';
+const EXT_VERSION = '0.9.0';
 
 console.info('Lorebook Sync v' + EXT_VERSION + ' loaded');
 const NOTION_API = 'https://api.notion.com/v1';
@@ -61,6 +61,7 @@ const I18N = {
         importOverwrite: 'перезаписывать существующее',
         restoreLorebooks: 'Восстановить лорбуки',
         restoreCharacters: 'Восстановить персонажей',
+        restorePersonas: 'Восстановить персон',
         uploadAvatars: 'загружать аватары в карточки Notion',
         exportTitle: '📦 Экспорт в Markdown (Obsidian)',
         exportChats: 'включать чаты (может быть долго)',
@@ -93,6 +94,7 @@ const I18N = {
         importOverwrite: 'overwrite existing',
         restoreLorebooks: 'Restore lorebooks',
         restoreCharacters: 'Restore characters',
+        restorePersonas: 'Restore personas',
         uploadAvatars: 'upload avatars into Notion cards',
         exportTitle: '📦 Export to Markdown (Obsidian)',
         exportChats: 'include chats (can be slow)',
@@ -125,6 +127,7 @@ const I18N = {
         importOverwrite: 'перезаписувати наявне',
         restoreLorebooks: 'Відновити лорбуки',
         restoreCharacters: 'Відновити персонажів',
+        restorePersonas: 'Відновити персон',
         uploadAvatars: 'завантажувати аватари в картки Notion',
         exportTitle: '📦 Експорт у Markdown (Obsidian)',
         exportChats: 'включати чати (може бути довго)',
@@ -157,6 +160,7 @@ const I18N = {
         importOverwrite: 'skriv över befintliga',
         restoreLorebooks: 'Återställ lorebooks',
         restoreCharacters: 'Återställ karaktärer',
+        restorePersonas: 'Återställ personer',
         uploadAvatars: 'ladda upp avatarer till Notion-kort',
         exportTitle: '📦 Exportera till Markdown (Obsidian)',
         exportChats: 'inkludera chattar (kan ta tid)',
@@ -294,7 +298,7 @@ function setProgress(text) {
 }
 
 function setBusy(busy) {
-    jQuery('.ls-sync-btn, #ls_test, #ls_sync_all, #ls_create_dbs, #ls_find_dbs, #ls_restore_lorebooks, #ls_restore_characters, #ls_export_md')
+    jQuery('.ls-sync-btn, #ls_test, #ls_sync_all, #ls_create_dbs, #ls_find_dbs, #ls_restore_lorebooks, #ls_restore_characters, #ls_restore_personas, #ls_export_md')
         .toggleClass('disabled', busy)
         .attr('aria-disabled', busy ? 'true' : 'false');
     jQuery('#ls_spinner').toggleClass('visible', busy);
@@ -1079,7 +1083,7 @@ async function syncPersonas() {
             const existing = await findPageByTitle(settings.personasDb, name);
             const marker = existing ? readMarker(existing) : null;
             const unchanged = Boolean(existing && marker && marker.kind === 'persona'
-                && marker.hash === signature);
+                && marker.hash === signature && marker.snap === '1');
             const needsAvatar = Boolean(settings.uploadAvatars && (!marker || marker.av !== '1'));
 
             if (unchanged && !needsAvatar) {
@@ -1099,13 +1103,14 @@ async function syncPersonas() {
             }
 
             const pageId = await upsertPage(settings.personasDb, name, blocks);
+            await appendBlocks(pageId, [snapshotBlock('persona', { name, avatar, description: descriptions[avatar] || {} })]);
 
             let avatarDone = false;
             if (settings.uploadAvatars) {
                 avatarDone = await applyAvatar(pageId, avatarUrlForPersona(avatar), name);
             }
 
-            await writeMarker(pageId, { kind: 'persona', hash: signature, av: avatarDone ? 1 : 0 });
+            await writeMarker(pageId, { kind: 'persona', hash: signature, snap: 1, av: avatarDone ? 1 : 0 });
             setStatus('— ' + name + ': обновлён', 'ok');
             ok++;
         } catch (err) {
@@ -1707,6 +1712,151 @@ async function autoFillMissingDatabases() {
     persist();
 }
 
+async function fileExists(url) {
+    try {
+        const response = await fetch(url, { method: 'GET', cache: 'no-store' });
+        return response.ok;
+    } catch (err) {
+        return false;
+    }
+}
+
+async function notionCoverBlob(pageId) {
+    let page;
+    try {
+        page = await notionRequest('/pages/' + pageId);
+    } catch (err) {
+        return null;
+    }
+
+    const cover = page.cover || page.icon || null;
+    if (!cover) {
+        return null;
+    }
+
+    const url = cover.type === 'file'
+        ? (cover.file && cover.file.url)
+        : (cover.type === 'external' ? (cover.external && cover.external.url) : null);
+    if (!url) {
+        return null;
+    }
+
+    try {
+        const response = await fetch(url);
+        if (!response.ok) {
+            return null;
+        }
+        return await response.blob();
+    } catch (err) {
+        return null;
+    }
+}
+
+/**
+ * Rebuild world info entries from the visible page text, for pages that
+ * were written before snapshots existed.
+ */
+function entriesFromBlocks(blocks) {
+    const entries = {};
+    let current = null;
+    let counter = 0;
+
+    for (const block of blocks) {
+        if (block.type === 'code') {
+            continue;
+        }
+
+        const text = String(block.text || '').trim();
+        if (!text) {
+            continue;
+        }
+
+        if (block.type && block.type.startsWith('heading')) {
+            counter++;
+            const parts = text.split(' — ');
+            const label = parts[0].trim();
+            const keys = parts.length > 1 ? parts.slice(1).join(' — ') : '';
+            const keyList = keys
+                ? keys.split(',').map(function (key) { return key.trim(); }).filter(Boolean)
+                : [label];
+
+            current = {
+                uid: counter,
+                key: keyList,
+                keysecondary: [],
+                comment: label,
+                content: '',
+                constant: false,
+                selective: true,
+                selectiveLogic: 0,
+                order: 100,
+                position: 0,
+                disable: false,
+                excludeRecursion: false,
+                preventRecursion: false,
+            };
+            entries[String(counter - 1)] = current;
+            continue;
+        }
+
+        if (!current) {
+            continue;
+        }
+
+        if (text.startsWith('[') && text.endsWith(']')) {
+            const flags = text.slice(1, -1).split(',').map(function (flag) { return flag.trim(); });
+            if (flags.includes('disabled')) current.disable = true;
+            if (flags.includes('constant')) current.constant = true;
+            if (flags.includes('vectorized')) current.vectorized = true;
+            continue;
+        }
+
+        current.content = current.content ? (current.content + '\n' + text) : text;
+    }
+
+    return entries;
+}
+
+function parsePersonaBlocks(blocks) {
+    let avatar = '';
+    let description = '';
+    let collect = false;
+
+    for (const block of blocks) {
+        const text = String(block.text || '').trim();
+        if (!text) {
+            continue;
+        }
+
+        if (text.indexOf('Аватар:') === 0) {
+            avatar = text.slice('Аватар:'.length).trim();
+            continue;
+        }
+
+        if (block.type && block.type.startsWith('heading')) {
+            collect = normalizeTitle(text) === 'описание';
+            continue;
+        }
+
+        if (collect) {
+            description = description ? (description + '\n' + text) : text;
+        }
+    }
+
+    return { avatar, description };
+}
+
+function personaFromSnapshot(snapshot, blocks) {
+    if (snapshot && snapshot.kind === 'persona') {
+        const info = snapshot.description || {};
+        return {
+            avatar: snapshot.avatar || '',
+            description: info.description || '',
+        };
+    }
+    return parsePersonaBlocks(blocks);
+}
+
 async function restoreLorebooks() {
     const settings = getSettings();
     const pages = await listDatabasePages(settings.lorebooksDb);
@@ -1722,15 +1872,25 @@ async function restoreLorebooks() {
         const title = pageTitle(page);
         try {
             const snapshot = await readSnapshot(page.id);
-            if (!snapshot || snapshot.kind !== 'lorebook' || !snapshot.entries) {
-                setStatus('⬇ ' + title + ': нет снимка, пропуск', 'muted');
+            const name = (snapshot && snapshot.name) || title;
+
+            if (!settings.importOverwrite && existing.has(name)) {
+                setStatus('⬇ ' + name + ': уже есть в Таверне, пропуск', 'muted');
                 skipped++;
                 continue;
             }
 
-            const name = snapshot.name || title;
-            if (!settings.importOverwrite && existing.has(name)) {
-                setStatus('⬇ ' + name + ': уже есть в Таверне, пропуск', 'muted');
+            let entries;
+            if (snapshot && snapshot.kind === 'lorebook' && snapshot.entries) {
+                entries = snapshot.entries;
+            } else {
+                const blocks = await listChildBlocks(page.id);
+                entries = entriesFromBlocks(blocks);
+                setStatus('⬇ ' + name + ': снимка нет, собираю из текста страницы', 'info');
+            }
+
+            if (!entries || Object.keys(entries).length === 0) {
+                setStatus('⬇ ' + name + ': пусто, пропуск', 'muted');
                 skipped++;
                 continue;
             }
@@ -1738,13 +1898,14 @@ async function restoreLorebooks() {
             const response = await fetch('/api/worldinfo/edit', {
                 method: 'POST',
                 headers: getRequestHeaders(),
-                body: JSON.stringify({ name, data: { entries: snapshot.entries } }),
+                body: JSON.stringify({ name, data: { entries } }),
             });
             if (!response.ok) {
                 throw new Error('worldinfo/edit: HTTP ' + response.status);
             }
 
-            setStatus('⬇ ' + name + ': восстановлен', 'ok');
+            setStatus('⬇ ' + name + ': восстановлен (' + Object.keys(entries).length + ' записей)', 'ok');
+            existing.add(name);
             ok++;
         } catch (err) {
             failed++;
@@ -1755,10 +1916,46 @@ async function restoreLorebooks() {
     return { ok, failed, skipped };
 }
 
+async function createCharacterFromPage(page, name, fields) {
+    const form = new FormData();
+    form.append('ch_name', name);
+
+    for (const field of CHARACTER_FIELDS) {
+        form.append(field, fields[field] == null ? '' : String(fields[field]));
+    }
+
+    if (Array.isArray(fields.alternate_greetings)) {
+        for (const greeting of fields.alternate_greetings) {
+            form.append('alternate_greetings', String(greeting));
+        }
+    }
+
+    if (Array.isArray(fields.tags)) {
+        form.append('tags', fields.tags.join(', '));
+    }
+
+    const blob = await notionCoverBlob(page.id);
+    if (blob) {
+        form.append('avatar', blob, safeFileName(name) + '.png');
+    }
+
+    const response = await fetch('/api/characters/create', {
+        method: 'POST',
+        headers: getRequestHeaders({ omitContentType: true }),
+        body: form,
+    });
+    if (!response.ok) {
+        throw new Error('characters/create: HTTP ' + response.status);
+    }
+
+    return await response.text();
+}
+
 async function restoreCharacters() {
     const settings = getSettings();
     const pages = await listDatabasePages(settings.charactersDb);
     const characters = getContext().characters || [];
+    const created = new Set();
 
     let ok = 0;
     let failed = 0;
@@ -1768,28 +1965,42 @@ async function restoreCharacters() {
         const title = pageTitle(page);
         try {
             const snapshot = await readSnapshot(page.id);
-            if (!snapshot || snapshot.kind !== 'character' || !snapshot.fields) {
-                setStatus('⬇ ' + title + ': нет снимка, пропуск', 'muted');
-                skipped++;
-                continue;
-            }
-
-            const name = snapshot.name || title;
+            const fields = (snapshot && snapshot.fields) || {};
+            const name = (snapshot && snapshot.name) || title;
             const character = characters.find(function (item) {
                 return item.name === name;
             });
+
             if (!character) {
-                setStatus('⬇ ' + name + ': нет такого персонажа в Таверне, пропуск', 'muted');
+                if (!Object.keys(fields).length) {
+                    setStatus('⬇ ' + name + ': нет снимка — сначала синхронизируйте персонажей', 'muted');
+                    skipped++;
+                    continue;
+                }
+                if (created.has(name)) {
+                    skipped++;
+                    continue;
+                }
+
+                const avatarName = await createCharacterFromPage(page, name, fields);
+                created.add(name);
+                setStatus('⬇ ' + name + ': создан (' + avatarName + ')', 'ok');
+                ok++;
+                continue;
+            }
+
+            if (!Object.keys(fields).length) {
+                setStatus('⬇ ' + name + ': нет снимка, пропуск', 'muted');
                 skipped++;
                 continue;
             }
 
             let changed = 0;
             for (const field of CHARACTER_FIELDS) {
-                if (!Object.hasOwn(snapshot.fields, field)) {
+                if (!Object.hasOwn(fields, field)) {
                     continue;
                 }
-                const value = snapshot.fields[field] == null ? '' : snapshot.fields[field];
+                const value = fields[field] == null ? '' : fields[field];
                 const current = character[field] == null ? '' : character[field];
                 if (String(current) === String(value)) {
                     continue;
@@ -1831,6 +2042,109 @@ async function restoreCharacters() {
     return { ok, failed, skipped };
 }
 
+async function uploadPersonaAvatar(fileName, blob) {
+    const form = new FormData();
+    form.append('avatar', blob, fileName);
+    form.append('overwrite_name', fileName);
+
+    const response = await fetch('/api/avatars/upload', {
+        method: 'POST',
+        headers: getRequestHeaders({ omitContentType: true }),
+        body: form,
+    });
+    if (!response.ok) {
+        throw new Error('avatars/upload: HTTP ' + response.status);
+    }
+    return fileName;
+}
+
+async function restorePersonas() {
+    const settings = getSettings();
+    const pages = await listDatabasePages(settings.personasDb);
+    const powerUser = getContext().powerUserSettings || {};
+
+    if (!powerUser.personas) {
+        powerUser.personas = {};
+    }
+    if (!powerUser.persona_descriptions) {
+        powerUser.persona_descriptions = {};
+    }
+
+    const personas = powerUser.personas;
+    const descriptions = powerUser.persona_descriptions;
+
+    const byName = {};
+    for (const avatar of Object.keys(personas)) {
+        byName[normalizeTitle(personas[avatar])] = { avatar, name: personas[avatar] };
+    }
+
+    let ok = 0;
+    let failed = 0;
+    let skipped = 0;
+
+    for (const page of pages) {
+        const title = pageTitle(page);
+        try {
+            const snapshot = await readSnapshot(page.id);
+            const blocks = snapshot ? [] : await listChildBlocks(page.id);
+            const parsed = personaFromSnapshot(snapshot, blocks);
+            const name = (snapshot && snapshot.name) || title;
+            const existing = byName[normalizeTitle(name)];
+
+            if (existing && !settings.importOverwrite) {
+                const current = descriptions[existing.avatar] || {};
+                if (String(current.description || '').trim()) {
+                    setStatus('⬇ ' + name + ': уже есть, пропуск', 'muted');
+                    skipped++;
+                    continue;
+                }
+            }
+
+            let avatarFile = parsed.avatar || (existing && existing.avatar) || (safeFileName(name) + '.png');
+            const exists = await fileExists('/User%20Avatars/' + encodeURIComponent(avatarFile));
+
+            if (!exists) {
+                const blob = await notionCoverBlob(page.id);
+                if (!blob) {
+                    setStatus('⬇ ' + name + ': нет аватара ни в Таверне, ни в Notion — пропуск', 'muted');
+                    skipped++;
+                    continue;
+                }
+                await uploadPersonaAvatar(avatarFile, blob);
+            }
+
+            const targetFile = (existing && existing.avatar) || avatarFile;
+            personas[targetFile] = name;
+            descriptions[targetFile] = Object.assign({}, descriptions[targetFile] || {}, {
+                description: parsed.description || '',
+                title: name,
+                position: 0,
+            });
+
+            setStatus('⬇ ' + name + ': персона ' + (existing ? 'обновлена' : 'добавлена'), 'ok');
+            ok++;
+        } catch (err) {
+            failed++;
+            setStatus('⬇ ' + title + ': ' + err.message, 'error');
+        }
+    }
+
+    if (ok > 0) {
+        const context = getContext();
+        try {
+            if (typeof context.saveSettings === 'function') {
+                await context.saveSettings();
+            } else {
+                persist();
+            }
+        } catch (err) {
+            setStatus('⬇ Персоны добавлены, но настройки не записались: ' + err.message, 'error');
+        }
+    }
+
+    return { ok, failed, skipped };
+}
+
 async function runImport(category) {
     const settings = getSettings();
     if (!settings.token) {
@@ -1838,7 +2152,7 @@ async function runImport(category) {
         return;
     }
 
-    const databaseId = category === 'lorebooks' ? settings.lorebooksDb : settings.charactersDb;
+    const databaseId = settings[DB_KEYS[category]];
     if (!databaseId) {
         setStatus(CAT_LABELS[category] + ': укажите database ID.', 'error');
         return;
@@ -1848,7 +2162,14 @@ async function runImport(category) {
     setStatus('⬇ Импорт: ' + CAT_LABELS[category] + ' — старт', 'info');
 
     try {
-        const result = category === 'lorebooks' ? await restoreLorebooks() : await restoreCharacters();
+        let result;
+        if (category === 'lorebooks') {
+            result = await restoreLorebooks();
+        } else if (category === 'characters') {
+            result = await restoreCharacters();
+        } else {
+            result = await restorePersonas();
+        }
         setStatus('⬇ Импорт завершён: ' + summaryLine(result), result.failed > 0 ? 'error' : 'ok');
         setStatus('⟳ Обновите страницу Таверны (F5), чтобы увидеть изменения.', 'muted');
     } catch (err) {
@@ -2230,6 +2551,10 @@ function bindUi() {
 
     jQuery('#ls_restore_characters').on('click', function () {
         runImport('characters');
+    });
+
+    jQuery('#ls_restore_personas').on('click', function () {
+        runImport('personas');
     });
 
     jQuery('#ls_export_chats')
