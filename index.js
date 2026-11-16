@@ -9,7 +9,7 @@ import { extension_settings, getContext } from '../../../extensions.js';
 import { getRequestHeaders, eventSource, event_types } from '../../../../script.js';
 
 const MODULE_NAME = 'lorebook-sync';
-const EXT_VERSION = '0.6.1';
+const EXT_VERSION = '0.7.0';
 
 console.info('Lorebook Sync v' + EXT_VERSION + ' loaded');
 const NOTION_API = 'https://api.notion.com/v1';
@@ -60,6 +60,7 @@ const I18N = {
         importOverwrite: 'перезаписывать существующее',
         restoreLorebooks: 'Восстановить лорбуки',
         restoreCharacters: 'Восстановить персонажей',
+        uploadAvatars: 'загружать аватары в карточки Notion',
         dbPlaceholder: 'database id',
     },
     en: {
@@ -87,6 +88,7 @@ const I18N = {
         importOverwrite: 'overwrite existing',
         restoreLorebooks: 'Restore lorebooks',
         restoreCharacters: 'Restore characters',
+        uploadAvatars: 'upload avatars into Notion cards',
         dbPlaceholder: 'database id',
     },
     uk: {
@@ -114,6 +116,7 @@ const I18N = {
         importOverwrite: 'перезаписувати наявне',
         restoreLorebooks: 'Відновити лорбуки',
         restoreCharacters: 'Відновити персонажів',
+        uploadAvatars: 'завантажувати аватари в картки Notion',
         dbPlaceholder: 'database id',
     },
     sv: {
@@ -141,6 +144,7 @@ const I18N = {
         importOverwrite: 'skriv över befintliga',
         restoreLorebooks: 'Återställ lorebooks',
         restoreCharacters: 'Återställ karaktärer',
+        uploadAvatars: 'ladda upp avatarer till Notion-kort',
         dbPlaceholder: 'database id',
     },
 };
@@ -198,6 +202,7 @@ const defaultSettings = Object.freeze({
     autoSyncEnabled: false,
     autoSyncEvery: 10,
     importOverwrite: false,
+    uploadAvatars: true,
     lastSync: '',
 });
 
@@ -346,6 +351,80 @@ async function getTitleProperty(databaseId) {
     const result = found || 'Name';
     titlePropertyCache[databaseId] = result;
     return result;
+}
+
+function avatarUrlForCharacter(character) {
+    if (!character || !character.avatar) {
+        return null;
+    }
+    return '/characters/' + encodeURIComponent(character.avatar);
+}
+
+function avatarUrlForPersona(avatar) {
+    if (!avatar) {
+        return null;
+    }
+    return '/User%20Avatars/' + encodeURIComponent(avatar);
+}
+
+async function uploadAvatarImage(url) {
+    const response = await fetch(url);
+    if (!response.ok) {
+        throw new Error('avatar HTTP ' + response.status);
+    }
+
+    const blob = await response.blob();
+    const filename = decodeURIComponent(url.split('/').pop() || 'avatar.png');
+
+    const created = await notionRequest('/file_uploads', {
+        method: 'POST',
+        body: {
+            filename,
+            content_type: blob.type || 'image/png',
+        },
+    });
+
+    const form = new FormData();
+    form.append('file', blob, filename);
+
+    const send = await fetch(created.upload_url, {
+        method: 'POST',
+        headers: {
+            'Authorization': 'Bearer ' + getSettings().token,
+            'Notion-Version': NOTION_VERSION,
+        },
+        body: form,
+    });
+    if (!send.ok) {
+        throw new Error('avatar upload HTTP ' + send.status);
+    }
+
+    return created.id;
+}
+
+async function setPageAvatar(pageId, uploadId) {
+    await notionRequest('/pages/' + pageId, {
+        method: 'PATCH',
+        body: {
+            icon: { type: 'file_upload', file_upload: { id: uploadId } },
+            cover: { type: 'file_upload', file_upload: { id: uploadId } },
+        },
+    });
+}
+
+async function applyAvatar(pageId, url, label) {
+    if (!url) {
+        return false;
+    }
+    try {
+        const uploadId = await uploadAvatarImage(url);
+        await setPageAvatar(pageId, uploadId);
+        setStatus('🖼 ' + label + ': аватар загружен', 'ok');
+        return true;
+    } catch (err) {
+        setStatus('🖼 ' + label + ': аватар пропущен — ' + err.message, 'muted');
+        return false;
+    }
 }
 
 function hashString(input) {
@@ -909,13 +988,25 @@ async function syncCharacters() {
             const signature = hashString(JSON.stringify(blocks));
 
             const existing = await findPageByTitle(settings.charactersDb, name);
-            if (existing) {
-                const marker = readMarker(existing);
-                if (marker && marker.kind === 'character' && marker.hash === signature && marker.snap === '1') {
-                    setStatus('— ' + name + ': без изменений', 'muted');
-                    skipped++;
-                    continue;
+            const marker = existing ? readMarker(existing) : null;
+            const unchanged = Boolean(existing && marker && marker.kind === 'character'
+                && marker.hash === signature && marker.snap === '1');
+            const needsAvatar = Boolean(settings.uploadAvatars && (!marker || marker.av !== '1'));
+
+            if (unchanged && !needsAvatar) {
+                setStatus('— ' + name + ': без изменений', 'muted');
+                skipped++;
+                continue;
+            }
+
+            if (unchanged && needsAvatar) {
+                const done = await applyAvatar(existing.id, avatarUrlForCharacter(character), name);
+                if (done) {
+                    await writeMarker(existing.id, { kind: 'character', hash: signature, snap: 1, av: 1 });
                 }
+                setStatus('— ' + name + ': контент без изменений', 'muted');
+                skipped++;
+                continue;
             }
 
             const pageId = await upsertPage(settings.charactersDb, name, blocks);
@@ -924,7 +1015,18 @@ async function syncCharacters() {
                 fields[field] = character[field] == null ? '' : character[field];
             }
             await appendBlocks(pageId, [snapshotBlock('character', { name, fields })]);
-            await writeMarker(pageId, { kind: 'character', hash: signature, snap: 1 });
+
+            let avatarDone = false;
+            if (settings.uploadAvatars) {
+                avatarDone = await applyAvatar(pageId, avatarUrlForCharacter(character), name);
+            }
+
+            await writeMarker(pageId, {
+                kind: 'character',
+                hash: signature,
+                snap: 1,
+                av: avatarDone ? 1 : 0,
+            });
             setStatus('— ' + name + ': обновлён', 'ok');
             ok++;
         } catch (err) {
@@ -958,17 +1060,35 @@ async function syncPersonas() {
             const signature = hashString(JSON.stringify(blocks));
 
             const existing = await findPageByTitle(settings.personasDb, name);
-            if (existing) {
-                const marker = readMarker(existing);
-                if (marker && marker.kind === 'persona' && marker.hash === signature) {
-                    setStatus('— ' + name + ': без изменений', 'muted');
-                    skipped++;
-                    continue;
+            const marker = existing ? readMarker(existing) : null;
+            const unchanged = Boolean(existing && marker && marker.kind === 'persona'
+                && marker.hash === signature);
+            const needsAvatar = Boolean(settings.uploadAvatars && (!marker || marker.av !== '1'));
+
+            if (unchanged && !needsAvatar) {
+                setStatus('— ' + name + ': без изменений', 'muted');
+                skipped++;
+                continue;
+            }
+
+            if (unchanged && needsAvatar) {
+                const done = await applyAvatar(existing.id, avatarUrlForPersona(avatar), name);
+                if (done) {
+                    await writeMarker(existing.id, { kind: 'persona', hash: signature, av: 1 });
                 }
+                setStatus('— ' + name + ': контент без изменений', 'muted');
+                skipped++;
+                continue;
             }
 
             const pageId = await upsertPage(settings.personasDb, name, blocks);
-            await writeMarker(pageId, { kind: 'persona', hash: signature });
+
+            let avatarDone = false;
+            if (settings.uploadAvatars) {
+                avatarDone = await applyAvatar(pageId, avatarUrlForPersona(avatar), name);
+            }
+
+            await writeMarker(pageId, { kind: 'persona', hash: signature, av: avatarDone ? 1 : 0 });
             setStatus('— ' + name + ': обновлён', 'ok');
             ok++;
         } catch (err) {
@@ -1669,6 +1789,13 @@ function bindUi() {
         .on('input', function () {
             settings.autoSyncEvery = Math.max(1, Number(jQuery(this).val()) || 1);
             updateAutoState();
+            persist();
+        });
+
+    jQuery('#ls_upload_avatars')
+        .prop('checked', Boolean(settings.uploadAvatars))
+        .on('change', function () {
+            settings.uploadAvatars = Boolean(jQuery(this).prop('checked'));
             persist();
         });
 

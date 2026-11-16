@@ -19,7 +19,7 @@
                 <div id="ls_sync_all" class="menu_button" data-ls-i18n="syncAll">Синхронизировать всё</div>
                 <div id="ls_spinner" class="ls-spinner" aria-hidden="true" title="Идёт синхронизация">✦</div>
                 <div class="ls-right">
-                    <span id="ls_version" class="ls-version" title="Версия расширения">v0.6.1</span>
+                    <span id="ls_version" class="ls-version" title="Версия расширения">v0.7.0</span>
                     <div class="ls-langs" role="group" aria-label="Language">
                         <div class="ls-lang" data-ls-lang="ru" title="Русский">RU</div>
                         <div class="ls-lang" data-ls-lang="en" title="English">EN</div>
@@ -32,6 +32,11 @@
             <div class="ls-actions ls-actions-second">
                 <div id="ls_create_dbs" class="menu_button" data-ls-i18n="create">Создать недостающие базы</div>
             </div>
+
+            <label class="checkbox_label">
+                <input id="ls_upload_avatars" type="checkbox" checked>
+                <span data-ls-i18n="uploadAvatars">загружать аватары в карточки Notion</span>
+            </label>
 
             <label for="ls_parent_page" class="ls-mini-label" data-ls-i18n="parentLabel">ID страницы Notion для новых баз (необязательно)</label>
             <input id="ls_parent_page" type="text" class="text_pole" placeholder="page id"
