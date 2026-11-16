@@ -9,7 +9,7 @@ import { extension_settings, getContext } from '../../../extensions.js';
 import { getRequestHeaders, eventSource, event_types } from '../../../../script.js';
 
 const MODULE_NAME = 'lorebook-sync';
-const EXT_VERSION = '0.9.0';
+const EXT_VERSION = '0.9.1';
 
 console.info('Lorebook Sync v' + EXT_VERSION + ' loaded');
 const NOTION_API = 'https://api.notion.com/v1';
@@ -1778,7 +1778,10 @@ function entriesFromBlocks(blocks) {
             const keys = parts.length > 1 ? parts.slice(1).join(' — ') : '';
             const keyList = keys
                 ? keys.split(',').map(function (key) { return key.trim(); }).filter(Boolean)
-                : [label];
+                : [];
+            if (!keyList.length) {
+                keyList.push(label);
+            }
 
             current = {
                 uid: counter,
@@ -1951,10 +1954,45 @@ async function createCharacterFromPage(page, name, fields) {
     return await response.text();
 }
 
+/**
+ * Fresh character list straight from the server, merged with the page cache.
+ * Prevents duplicate cards when import runs twice without a reload.
+ */
+async function listServerCharacters() {
+    const byName = new Map();
+
+    const cached = getContext().characters || [];
+    for (const character of cached) {
+        if (character && character.name) {
+            byName.set(character.name, character);
+        }
+    }
+
+    try {
+        const response = await fetch('/api/characters/all', {
+            method: 'POST',
+            headers: getRequestHeaders(),
+            body: JSON.stringify({}),
+        });
+        if (response.ok) {
+            const list = await response.json();
+            for (const character of Array.isArray(list) ? list : []) {
+                if (character && character.name) {
+                    byName.set(character.name, Object.assign({}, byName.get(character.name) || {}, character));
+                }
+            }
+        }
+    } catch (err) {
+        console.warn('Lorebook Sync: /api/characters/all failed', err);
+    }
+
+    return Array.from(byName.values());
+}
+
 async function restoreCharacters() {
     const settings = getSettings();
     const pages = await listDatabasePages(settings.charactersDb);
-    const characters = getContext().characters || [];
+    const characters = await listServerCharacters();
     const created = new Set();
 
     let ok = 0;
