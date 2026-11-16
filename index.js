@@ -9,7 +9,7 @@ import { extension_settings, getContext } from '../../../extensions.js';
 import { getRequestHeaders, eventSource, event_types } from '../../../../script.js';
 
 const MODULE_NAME = 'lorebook-sync';
-const EXT_VERSION = '0.5.1';
+const EXT_VERSION = '0.6.0';
 
 console.info('Lorebook Sync v' + EXT_VERSION + ' loaded');
 const NOTION_API = 'https://api.notion.com/v1';
@@ -56,6 +56,10 @@ const I18N = {
         autoTitle: '🤖 Авто-синхронизация',
         autoEnable: 'авто-синхронизация активного чата',
         autoEvery: 'каждые N сообщений',
+        importTitle: '⬇ Импорт из Notion',
+        importOverwrite: 'перезаписывать существующее',
+        restoreLorebooks: 'Восстановить лорбуки',
+        restoreCharacters: 'Восстановить персонажей',
         dbPlaceholder: 'database id',
     },
     en: {
@@ -79,6 +83,10 @@ const I18N = {
         autoTitle: '🤖 Auto-sync',
         autoEnable: 'auto-sync the active chat',
         autoEvery: 'every N messages',
+        importTitle: '⬇ Import from Notion',
+        importOverwrite: 'overwrite existing',
+        restoreLorebooks: 'Restore lorebooks',
+        restoreCharacters: 'Restore characters',
         dbPlaceholder: 'database id',
     },
     uk: {
@@ -102,6 +110,10 @@ const I18N = {
         autoTitle: '🤖 Автосинхронізація',
         autoEnable: 'автосинхронізація активного чату',
         autoEvery: 'кожні N повідомлень',
+        importTitle: '⬇ Імпорт з Notion',
+        importOverwrite: 'перезаписувати наявне',
+        restoreLorebooks: 'Відновити лорбуки',
+        restoreCharacters: 'Відновити персонажів',
         dbPlaceholder: 'database id',
     },
     sv: {
@@ -125,6 +137,10 @@ const I18N = {
         autoTitle: '🤖 Autosynk',
         autoEnable: 'autosynka den aktiva chatten',
         autoEvery: 'var N:e meddelande',
+        importTitle: '⬇ Importera från Notion',
+        importOverwrite: 'skriv över befintliga',
+        restoreLorebooks: 'Återställ lorebooks',
+        restoreCharacters: 'Återställ karaktärer',
         dbPlaceholder: 'database id',
     },
 };
@@ -181,6 +197,7 @@ const defaultSettings = Object.freeze({
     rewriteChats: false,
     autoSyncEnabled: false,
     autoSyncEvery: 10,
+    importOverwrite: false,
     lastSync: '',
 });
 
@@ -430,6 +447,113 @@ function summaryLine(result) {
     }
     parts.push(result.failed + ' ошибок');
     return parts.join(', ');
+}
+
+const SNAPSHOT_PREFIX = '⟦ls-snapshot:v1 ';
+
+const CHARACTER_FIELDS = [
+    'description',
+    'personality',
+    'scenario',
+    'first_mes',
+    'mes_example',
+    'creator_notes',
+    'system_prompt',
+    'post_history_instructions',
+];
+
+function snapshotBlock(kind, payload) {
+    const data = { kind };
+    for (const key of Object.keys(payload || {})) {
+        data[key] = payload[key];
+    }
+    const text = SNAPSHOT_PREFIX + JSON.stringify(data) + '⟧';
+    return {
+        object: 'block',
+        type: 'code',
+        code: {
+            language: 'json',
+            rich_text: richText(text),
+        },
+    };
+}
+
+async function listChildBlocks(pageId) {
+    const blocks = [];
+    let cursor = undefined;
+    for (;;) {
+        const query = cursor
+            ? ('?page_size=100&start_cursor=' + encodeURIComponent(cursor))
+            : '?page_size=100';
+        const data = await notionRequest('/blocks/' + pageId + '/children' + query);
+        for (const block of (data.results || [])) {
+            const payload = block[block.type] || {};
+            const text = (payload.rich_text || []).map(function (part) {
+                return part.plain_text || (part.text && part.text.content) || '';
+            }).join('');
+            blocks.push({ id: block.id, type: block.type, text });
+        }
+        if (!data.has_more) {
+            break;
+        }
+        cursor = data.next_cursor;
+    }
+    return blocks;
+}
+
+async function readSnapshot(pageId) {
+    const blocks = await listChildBlocks(pageId);
+    for (const block of blocks) {
+        if (block.type !== 'code' || !block.text.startsWith(SNAPSHOT_PREFIX)) {
+            continue;
+        }
+        const end = block.text.lastIndexOf('⟧');
+        if (end < SNAPSHOT_PREFIX.length) {
+            continue;
+        }
+        try {
+            return JSON.parse(block.text.slice(SNAPSHOT_PREFIX.length, end));
+        } catch (err) {
+            return null;
+        }
+    }
+    return null;
+}
+
+async function listDatabasePages(databaseId) {
+    const pages = [];
+    let cursor = undefined;
+    for (;;) {
+        const body = { page_size: 100 };
+        if (cursor) {
+            body.start_cursor = cursor;
+        }
+        const data = await notionRequest('/databases/' + databaseId + '/query', {
+            method: 'POST',
+            body,
+        });
+        for (const page of (data.results || [])) {
+            pages.push(page);
+        }
+        if (!data.has_more) {
+            break;
+        }
+        cursor = data.next_cursor;
+    }
+    return pages;
+}
+
+function pageTitle(page) {
+    const properties = (page && page.properties) || {};
+    for (const key of Object.keys(properties)) {
+        const property = properties[key];
+        if (property && property.type === 'title' && Array.isArray(property.title)) {
+            return property.title.map(function (part) {
+                return part.plain_text || (part.text && part.text.content) || '';
+            }).join('');
+        }
+    }
+    return 'Untitled';
 }
 
 function richText(content) {
@@ -754,6 +878,7 @@ async function syncLorebooks() {
             }
 
             const pageId = await upsertPage(settings.lorebooksDb, book.name, blocks);
+            await appendBlocks(pageId, [snapshotBlock('lorebook', { name: book.name, entries })]);
             await writeMarker(pageId, { kind: 'lorebook', hash: signature });
             setStatus('— ' + book.name + ': ' + count + ' записей', 'ok');
             ok++;
@@ -794,6 +919,11 @@ async function syncCharacters() {
             }
 
             const pageId = await upsertPage(settings.charactersDb, name, blocks);
+            const fields = {};
+            for (const field of CHARACTER_FIELDS) {
+                fields[field] = character[field] == null ? '' : character[field];
+            }
+            await appendBlocks(pageId, [snapshotBlock('character', { name, fields })]);
             await writeMarker(pageId, { kind: 'character', hash: signature });
             setStatus('— ' + name + ': обновлён', 'ok');
             ok++;
@@ -959,9 +1089,6 @@ async function syncChats() {
     return { ok, failed, skipped };
 }
 
-let autoSyncCounter = 0;
-let autoSyncRunning = false;
-
 async function autoSyncTick() {
     const settings = getSettings();
     if (!settings.autoSyncEnabled || !settings.token || !settings.chatsDb) {
@@ -973,10 +1100,12 @@ async function autoSyncTick() {
 
     const every = Math.max(1, Number(settings.autoSyncEvery) || 10);
     autoSyncCounter++;
+    updateAutoState();
     if (autoSyncCounter < every) {
         return;
     }
     autoSyncCounter = 0;
+    updateAutoState();
 
     const context = getContext();
     const character = context.characters && context.characters[context.characterId];
@@ -1295,6 +1424,174 @@ async function autoFillMissingDatabases() {
     persist();
 }
 
+async function restoreLorebooks() {
+    const settings = getSettings();
+    const pages = await listDatabasePages(settings.lorebooksDb);
+    const existing = new Set((await listLorebooks()).map(function (book) {
+        return book.name;
+    }));
+
+    let ok = 0;
+    let failed = 0;
+    let skipped = 0;
+
+    for (const page of pages) {
+        const title = pageTitle(page);
+        try {
+            const snapshot = await readSnapshot(page.id);
+            if (!snapshot || snapshot.kind !== 'lorebook' || !snapshot.entries) {
+                setStatus('⬇ ' + title + ': нет снимка, пропуск', 'muted');
+                skipped++;
+                continue;
+            }
+
+            const name = snapshot.name || title;
+            if (!settings.importOverwrite && existing.has(name)) {
+                setStatus('⬇ ' + name + ': уже есть в Таверне, пропуск', 'muted');
+                skipped++;
+                continue;
+            }
+
+            const response = await fetch('/api/worldinfo/edit', {
+                method: 'POST',
+                headers: getRequestHeaders(),
+                body: JSON.stringify({ name, data: { entries: snapshot.entries } }),
+            });
+            if (!response.ok) {
+                throw new Error('worldinfo/edit: HTTP ' + response.status);
+            }
+
+            setStatus('⬇ ' + name + ': восстановлен', 'ok');
+            ok++;
+        } catch (err) {
+            failed++;
+            setStatus('⬇ ' + title + ': ' + err.message, 'error');
+        }
+    }
+
+    return { ok, failed, skipped };
+}
+
+async function restoreCharacters() {
+    const settings = getSettings();
+    const pages = await listDatabasePages(settings.charactersDb);
+    const characters = getContext().characters || [];
+
+    let ok = 0;
+    let failed = 0;
+    let skipped = 0;
+
+    for (const page of pages) {
+        const title = pageTitle(page);
+        try {
+            const snapshot = await readSnapshot(page.id);
+            if (!snapshot || snapshot.kind !== 'character' || !snapshot.fields) {
+                setStatus('⬇ ' + title + ': нет снимка, пропуск', 'muted');
+                skipped++;
+                continue;
+            }
+
+            const name = snapshot.name || title;
+            const character = characters.find(function (item) {
+                return item.name === name;
+            });
+            if (!character) {
+                setStatus('⬇ ' + name + ': нет такого персонажа в Таверне, пропуск', 'muted');
+                skipped++;
+                continue;
+            }
+
+            let changed = 0;
+            for (const field of CHARACTER_FIELDS) {
+                if (!Object.hasOwn(snapshot.fields, field)) {
+                    continue;
+                }
+                const value = snapshot.fields[field] == null ? '' : snapshot.fields[field];
+                const current = character[field] == null ? '' : character[field];
+                if (String(current) === String(value)) {
+                    continue;
+                }
+                if (!settings.importOverwrite && String(current).trim()) {
+                    continue;
+                }
+
+                const response = await fetch('/api/characters/edit-attribute', {
+                    method: 'POST',
+                    headers: getRequestHeaders(),
+                    body: JSON.stringify({
+                        avatar_url: character.avatar,
+                        ch_name: character.name,
+                        field,
+                        value,
+                    }),
+                });
+                if (!response.ok) {
+                    throw new Error('edit-attribute ' + field + ': HTTP ' + response.status);
+                }
+                character[field] = value;
+                changed++;
+            }
+
+            if (changed > 0) {
+                setStatus('⬇ ' + name + ': обновлено полей — ' + changed, 'ok');
+                ok++;
+            } else {
+                setStatus('⬇ ' + name + ': без изменений', 'muted');
+                skipped++;
+            }
+        } catch (err) {
+            failed++;
+            setStatus('⬇ ' + title + ': ' + err.message, 'error');
+        }
+    }
+
+    return { ok, failed, skipped };
+}
+
+async function runImport(category) {
+    const settings = getSettings();
+    if (!settings.token) {
+        setStatus('Сначала укажите Notion integration token.', 'error');
+        return;
+    }
+
+    const databaseId = category === 'lorebooks' ? settings.lorebooksDb : settings.charactersDb;
+    if (!databaseId) {
+        setStatus(CAT_LABELS[category] + ': укажите database ID.', 'error');
+        return;
+    }
+
+    setBusy(true);
+    setStatus('⬇ Импорт: ' + CAT_LABELS[category] + ' — старт', 'info');
+
+    try {
+        const result = category === 'lorebooks' ? await restoreLorebooks() : await restoreCharacters();
+        setStatus('⬇ Импорт завершён: ' + summaryLine(result), result.failed > 0 ? 'error' : 'ok');
+        setStatus('⟳ Обновите страницу Таверны (F5), чтобы увидеть изменения.', 'muted');
+    } catch (err) {
+        setStatus('⬇ Импорт: ' + err.message, 'error');
+    } finally {
+        setBusy(false);
+    }
+}
+
+let autoSyncCounter = 0;
+let autoSyncRunning = false;
+
+function updateAutoState() {
+    const element = jQuery('#ls_auto_state');
+    if (!element.length) {
+        return;
+    }
+    const settings = getSettings();
+    if (!settings.autoSyncEnabled) {
+        element.text('');
+        return;
+    }
+    const every = Math.max(1, Number(settings.autoSyncEvery) || 10);
+    element.text(autoSyncCounter + ' / ' + every);
+}
+
 /* ------------------------------------------------------------------ */
 /* UI wiring                                                           */
 /* ------------------------------------------------------------------ */
@@ -1363,6 +1660,7 @@ function bindUi() {
         .on('change', function () {
             settings.autoSyncEnabled = Boolean(jQuery(this).prop('checked'));
             autoSyncCounter = 0;
+            updateAutoState();
             persist();
         });
 
@@ -1370,8 +1668,26 @@ function bindUi() {
         .val(settings.autoSyncEvery)
         .on('input', function () {
             settings.autoSyncEvery = Math.max(1, Number(jQuery(this).val()) || 1);
+            updateAutoState();
             persist();
         });
+
+    jQuery('#ls_import_overwrite')
+        .prop('checked', Boolean(settings.importOverwrite))
+        .on('change', function () {
+            settings.importOverwrite = Boolean(jQuery(this).prop('checked'));
+            persist();
+        });
+
+    jQuery('#ls_restore_lorebooks').on('click', function () {
+        runImport('lorebooks');
+    });
+
+    jQuery('#ls_restore_characters').on('click', function () {
+        runImport('characters');
+    });
+
+    updateAutoState();
 
     jQuery('#ls_test').on('click', testConnection);
     jQuery('#ls_sync_all').on('click', syncAll);
