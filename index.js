@@ -9,7 +9,7 @@ import { extension_settings, getContext } from '../../../extensions.js';
 import { getRequestHeaders, eventSource, event_types } from '../../../../script.js';
 
 const MODULE_NAME = 'lorebook-sync';
-const EXT_VERSION = '0.7.0';
+const EXT_VERSION = '0.8.0';
 
 console.info('Lorebook Sync v' + EXT_VERSION + ' loaded');
 const NOTION_API = 'https://api.notion.com/v1';
@@ -61,6 +61,9 @@ const I18N = {
         restoreLorebooks: 'Восстановить лорбуки',
         restoreCharacters: 'Восстановить персонажей',
         uploadAvatars: 'загружать аватары в карточки Notion',
+        exportTitle: '📦 Экспорт в Markdown (Obsidian)',
+        exportChats: 'включать чаты (может быть долго)',
+        exportButton: 'Скачать .md архив',
         dbPlaceholder: 'database id',
     },
     en: {
@@ -89,6 +92,9 @@ const I18N = {
         restoreLorebooks: 'Restore lorebooks',
         restoreCharacters: 'Restore characters',
         uploadAvatars: 'upload avatars into Notion cards',
+        exportTitle: '📦 Export to Markdown (Obsidian)',
+        exportChats: 'include chats (can be slow)',
+        exportButton: 'Download .md archive',
         dbPlaceholder: 'database id',
     },
     uk: {
@@ -117,6 +123,9 @@ const I18N = {
         restoreLorebooks: 'Відновити лорбуки',
         restoreCharacters: 'Відновити персонажів',
         uploadAvatars: 'завантажувати аватари в картки Notion',
+        exportTitle: '📦 Експорт у Markdown (Obsidian)',
+        exportChats: 'включати чати (може бути довго)',
+        exportButton: 'Завантажити .md архів',
         dbPlaceholder: 'database id',
     },
     sv: {
@@ -145,6 +154,9 @@ const I18N = {
         restoreLorebooks: 'Återställ lorebooks',
         restoreCharacters: 'Återställ karaktärer',
         uploadAvatars: 'ladda upp avatarer till Notion-kort',
+        exportTitle: '📦 Exportera till Markdown (Obsidian)',
+        exportChats: 'inkludera chattar (kan ta tid)',
+        exportButton: 'Ladda ner .md-arkiv',
         dbPlaceholder: 'database id',
     },
 };
@@ -203,6 +215,7 @@ const defaultSettings = Object.freeze({
     autoSyncEvery: 10,
     importOverwrite: false,
     uploadAvatars: true,
+    exportChats: false,
     lastSync: '',
 });
 
@@ -277,7 +290,7 @@ function setProgress(text) {
 }
 
 function setBusy(busy) {
-    jQuery('.ls-sync-btn, #ls_test, #ls_sync_all, #ls_create_dbs, #ls_restore_lorebooks, #ls_restore_characters')
+    jQuery('.ls-sync-btn, #ls_test, #ls_sync_all, #ls_create_dbs, #ls_restore_lorebooks, #ls_restore_characters, #ls_export_md')
         .toggleClass('disabled', busy)
         .attr('aria-disabled', busy ? 'true' : 'false');
     jQuery('#ls_spinner').toggleClass('visible', busy);
@@ -1713,6 +1726,261 @@ function updateAutoState() {
 }
 
 /* ------------------------------------------------------------------ */
+/* Markdown export (Obsidian vault)                                    */
+/* ------------------------------------------------------------------ */
+
+const CAT_FOLDERS = {
+    lorebooks: 'Lorebooks',
+    characters: 'Characters',
+    personas: 'Personas',
+    chats: 'Chats',
+};
+
+const ZIP_CRC_TABLE = (function () {
+    const table = new Uint32Array(256);
+    for (let index = 0; index < 256; index++) {
+        let value = index;
+        for (let bit = 0; bit < 8; bit++) {
+            value = (value & 1) ? (0xEDB88320 ^ (value >>> 1)) : (value >>> 1);
+        }
+        table[index] = value >>> 0;
+    }
+    return table;
+})();
+
+function crc32(bytes) {
+    let crc = 0xFFFFFFFF;
+    for (let index = 0; index < bytes.length; index++) {
+        crc = ZIP_CRC_TABLE[(crc ^ bytes[index]) & 0xFF] ^ (crc >>> 8);
+    }
+    return (crc ^ 0xFFFFFFFF) >>> 0;
+}
+
+function utf8Bytes(text) {
+    return new TextEncoder().encode(text);
+}
+
+/**
+ * Minimal ZIP writer (stored, no compression) so the export needs no libraries.
+ */
+function buildZip(files) {
+    const chunks = [];
+    const central = [];
+    let offset = 0;
+
+    for (const file of files) {
+        const nameBytes = utf8Bytes(file.path);
+        const dataBytes = utf8Bytes(file.content);
+        const crc = crc32(dataBytes);
+        const size = dataBytes.length;
+
+        const local = new Uint8Array(30 + nameBytes.length);
+        const localView = new DataView(local.buffer);
+        localView.setUint32(0, 0x04034b50, true);
+        localView.setUint16(4, 20, true);
+        localView.setUint16(6, 0x0800, true);
+        localView.setUint16(8, 0, true);
+        localView.setUint16(10, 0, true);
+        localView.setUint16(12, 0x21, true);
+        localView.setUint32(14, crc, true);
+        localView.setUint32(18, size, true);
+        localView.setUint32(22, size, true);
+        localView.setUint16(26, nameBytes.length, true);
+        localView.setUint16(28, 0, true);
+        local.set(nameBytes, 30);
+
+        chunks.push(local, dataBytes);
+
+        const entry = new Uint8Array(46 + nameBytes.length);
+        const entryView = new DataView(entry.buffer);
+        entryView.setUint32(0, 0x02014b50, true);
+        entryView.setUint16(4, 20, true);
+        entryView.setUint16(6, 20, true);
+        entryView.setUint16(8, 0x0800, true);
+        entryView.setUint16(10, 0, true);
+        entryView.setUint16(12, 0, true);
+        entryView.setUint16(14, 0x21, true);
+        entryView.setUint32(16, crc, true);
+        entryView.setUint32(20, size, true);
+        entryView.setUint32(24, size, true);
+        entryView.setUint16(28, nameBytes.length, true);
+        entryView.setUint32(42, offset, true);
+        entry.set(nameBytes, 46);
+        central.push(entry);
+
+        offset += local.length + size;
+    }
+
+    const centralSize = central.reduce(function (sum, part) {
+        return sum + part.length;
+    }, 0);
+
+    const end = new Uint8Array(22);
+    const endView = new DataView(end.buffer);
+    endView.setUint32(0, 0x06054b50, true);
+    endView.setUint16(8, files.length, true);
+    endView.setUint16(10, files.length, true);
+    endView.setUint32(12, centralSize, true);
+    endView.setUint32(16, offset, true);
+
+    return new Blob(chunks.concat(central, [end]), { type: 'application/zip' });
+}
+
+function downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(function () {
+        URL.revokeObjectURL(url);
+    }, 10000);
+}
+
+function yamlString(value) {
+    return '"' + String(value == null ? '' : value)
+        .replace(/\\/g, '\\\\')
+        .replace(/"/g, '\\"') + '"';
+}
+
+function safeFileName(title) {
+    const cleaned = String(title || 'Untitled')
+        .replace(/[\\/:*?"<>|#^[\]]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    return (cleaned || 'Untitled').slice(0, 120);
+}
+
+function notionBlocksToMarkdown(blocks) {
+    const lines = [];
+
+    for (const block of blocks) {
+        if (block.type === 'code' && String(block.text || '').startsWith(SNAPSHOT_PREFIX)) {
+            continue;
+        }
+
+        const text = String(block.text || '').trim();
+        if (!text) {
+            continue;
+        }
+
+        switch (block.type) {
+            case 'heading_1': lines.push('# ' + text); break;
+            case 'heading_2': lines.push('## ' + text); break;
+            case 'heading_3': lines.push('### ' + text); break;
+            case 'bulleted_list_item': lines.push('- ' + text); break;
+            case 'numbered_list_item': lines.push('1. ' + text); break;
+            case 'quote':
+            case 'callout': lines.push('> ' + text); break;
+            case 'to_do': lines.push('- [ ] ' + text); break;
+            case 'code': lines.push('```\n' + text + '\n```'); break;
+            case 'divider': lines.push('---'); break;
+            default: lines.push(text);
+        }
+
+        lines.push('');
+    }
+
+    return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim() + '\n';
+}
+
+async function exportDatabase(category, settings) {
+    const databaseId = settings[DB_KEYS[category]];
+    if (!databaseId) {
+        setStatus('📦 ' + CAT_LABELS[category] + ': database ID не задан — пропуск', 'muted');
+        return { files: [], pages: 0 };
+    }
+
+    const pages = await listDatabasePages(databaseId);
+    const files = [];
+    const used = new Set();
+    let done = 0;
+
+    for (const page of pages) {
+        done++;
+        const title = pageTitle(page);
+        setProgress('📦 ' + CAT_LABELS[category] + ': ' + done + ' / ' + pages.length);
+
+        let name = safeFileName(title);
+        if (used.has(name)) {
+            let suffix = 2;
+            while (used.has(name + ' (' + suffix + ')')) {
+                suffix++;
+            }
+            name = name + ' (' + suffix + ')';
+        }
+        used.add(name);
+
+        const blocks = await listChildBlocks(page.id);
+        const header = [
+            '---',
+            'title: ' + yamlString(title),
+            'category: ' + yamlString(category),
+            'notion_id: ' + yamlString(page.id),
+            'notion_url: ' + yamlString(page.url || ''),
+            'last_edited: ' + yamlString(page.last_edited_time || ''),
+            '---',
+            '',
+            '# ' + title,
+            '',
+        ].join('\n');
+
+        files.push({
+            path: CAT_FOLDERS[category] + '/' + name + '.md',
+            content: header + notionBlocksToMarkdown(blocks),
+        });
+    }
+
+    setProgress('');
+    return { files, pages: pages.length };
+}
+
+async function runExport() {
+    const settings = getSettings();
+    if (!settings.token) {
+        setStatus('Сначала укажите Notion integration token.', 'error');
+        return;
+    }
+
+    const categories = ['lorebooks', 'characters', 'personas'];
+    if (settings.exportChats) {
+        categories.push('chats');
+    }
+
+    setBusy(true);
+    setStatus('📦 Экспорт в Markdown: старт', 'info');
+
+    try {
+        const files = [];
+        let totalPages = 0;
+
+        for (const category of categories) {
+            const result = await exportDatabase(category, settings);
+            files.push.apply(files, result.files);
+            totalPages += result.pages;
+            setStatus('📦 ' + CAT_LABELS[category] + ': страниц — ' + result.pages, 'ok');
+        }
+
+        if (files.length === 0) {
+            setStatus('📦 Нечего экспортировать: базы пусты.', 'muted');
+            return;
+        }
+
+        const stamp = new Date().toISOString().slice(0, 10);
+        downloadBlob(buildZip(files), 'lorebook-sync-' + stamp + '.zip');
+        setStatus('📦 Готово: ' + files.length + ' файлов из ' + totalPages + ' страниц — архив скачан.', 'ok');
+        setStatus('📦 Распакуйте архив в папку vault Obsidian.', 'muted');
+    } catch (err) {
+        setStatus('📦 Экспорт: ' + err.message, 'error');
+    } finally {
+        setProgress('');
+        setBusy(false);
+    }
+}
+
+/* ------------------------------------------------------------------ */
 /* UI wiring                                                           */
 /* ------------------------------------------------------------------ */
 
@@ -1813,6 +2081,15 @@ function bindUi() {
     jQuery('#ls_restore_characters').on('click', function () {
         runImport('characters');
     });
+
+    jQuery('#ls_export_chats')
+        .prop('checked', Boolean(settings.exportChats))
+        .on('change', function () {
+            settings.exportChats = Boolean(jQuery(this).prop('checked'));
+            persist();
+        });
+
+    jQuery('#ls_export_md').on('click', runExport);
 
     updateAutoState();
 

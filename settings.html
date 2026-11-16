@@ -19,7 +19,7 @@
                 <div id="ls_sync_all" class="menu_button" data-ls-i18n="syncAll">Синхронизировать всё</div>
                 <div id="ls_spinner" class="ls-spinner" aria-hidden="true" title="Идёт синхронизация">✦</div>
                 <div class="ls-right">
-                    <span id="ls_version" class="ls-version" title="Версия расширения">v0.7.0</span>
+                    <span id="ls_version" class="ls-version" title="Версия расширения">v0.8.0</span>
                     <div class="ls-langs" role="group" aria-label="Language">
                         <div class="ls-lang" data-ls-lang="ru" title="Русский">RU</div>
                         <div class="ls-lang" data-ls-lang="en" title="English">EN</div>
@@ -123,6 +123,19 @@
                 <div class="ls-actions">
                     <div id="ls_restore_lorebooks" class="menu_button" data-ls-i18n="restoreLorebooks">Восстановить лорбуки</div>
                     <div id="ls_restore_characters" class="menu_button" data-ls-i18n="restoreCharacters">Восстановить персонажей</div>
+                </div>
+            </div>
+
+            <div class="ls-cat">
+                <div class="ls-cat-head">
+                    <span data-ls-i18n="exportTitle">📦 Экспорт в Markdown (Obsidian)</span>
+                </div>
+                <label class="checkbox_label">
+                    <input id="ls_export_chats" type="checkbox">
+                    <span data-ls-i18n="exportChats">включать чаты (может быть долго)</span>
+                </label>
+                <div class="ls-actions">
+                    <div id="ls_export_md" class="menu_button" data-ls-i18n="exportButton">Скачать .md архив</div>
                 </div>
             </div>
 
