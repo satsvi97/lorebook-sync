@@ -272,7 +272,7 @@ function setProgress(text) {
 }
 
 function setBusy(busy) {
-    jQuery('.ls-sync-btn, #ls_test, #ls_sync_all, #ls_create_dbs')
+    jQuery('.ls-sync-btn, #ls_test, #ls_sync_all, #ls_create_dbs, #ls_restore_lorebooks, #ls_restore_characters')
         .toggleClass('disabled', busy)
         .attr('aria-disabled', busy ? 'true' : 'false');
     jQuery('#ls_spinner').toggleClass('visible', busy);
