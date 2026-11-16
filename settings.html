@@ -1,11 +1,11 @@
 <div class="lorebook-sync-settings">
     <div class="inline-drawer">
         <div class="inline-drawer-toggle inline-drawer-header">
-            <b>вњ¦ LOREBOOK SYNC вњ¦</b>
+            <b>✦ LOREBOOK SYNC ✦</b>
             <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
         </div>
         <div class="inline-drawer-content">
-            <small data-ls-i18n="desc">РЎРёРЅС…СЂРѕРЅРёР·Р°С†РёСЏ РґР°РЅРЅС‹С… SillyTavern РІ Р±Р°Р·С‹ Notion.</small>
+            <small data-ls-i18n="desc">Синхронизация данных SillyTavern в базы Notion.</small>
 
             <label for="ls_token">Notion integration token</label>
             <div class="ls-row">
@@ -15,51 +15,51 @@
             </div>
 
             <div class="ls-actions">
-                <div id="ls_test" class="menu_button" data-ls-i18n="test">РџСЂРѕРІРµСЂРёС‚СЊ СЃРІСЏР·СЊ</div>
-                <div id="ls_sync_all" class="menu_button" data-ls-i18n="syncAll">РЎРёРЅС…СЂРѕРЅРёР·РёСЂРѕРІР°С‚СЊ РІСЃС‘</div>
-                <div id="ls_spinner" class="ls-spinner" aria-hidden="true" title="РРґС‘С‚ СЃРёРЅС…СЂРѕРЅРёР·Р°С†РёСЏ">вњ¦</div>
+                <div id="ls_test" class="menu_button" data-ls-i18n="test">Проверить связь</div>
+                <div id="ls_sync_all" class="menu_button" data-ls-i18n="syncAll">Синхронизировать всё</div>
+                <div id="ls_spinner" class="ls-spinner" aria-hidden="true" title="Идёт синхронизация">✦</div>
                 <div class="ls-right">
-                    <span id="ls_version" class="ls-version" title="Р’РµСЂСЃРёСЏ СЂР°СЃС€РёСЂРµРЅРёСЏ">v0.8.1</span>
+                    <span id="ls_version" class="ls-version" title="Версия расширения">v0.8.1</span>
                     <div class="ls-langs" role="group" aria-label="Language">
-                        <div class="ls-lang" data-ls-lang="ru" title="Р СѓСЃСЃРєРёР№">RU</div>
+                        <div class="ls-lang" data-ls-lang="ru" title="Русский">RU</div>
                         <div class="ls-lang" data-ls-lang="en" title="English">EN</div>
-                        <div class="ls-lang" data-ls-lang="uk" title="РЈРєСЂР°С—РЅСЃСЊРєР°">UK</div>
+                        <div class="ls-lang" data-ls-lang="uk" title="Українська">UK</div>
                         <div class="ls-lang" data-ls-lang="sv" title="Svenska">SV</div>
                     </div>
                 </div>
             </div>
 
             <div class="ls-actions ls-actions-second">
-                <div id="ls_create_dbs" class="menu_button" data-ls-i18n="create">РЎРѕР·РґР°С‚СЊ РЅРµРґРѕСЃС‚Р°СЋС‰РёРµ Р±Р°Р·С‹</div>
-                <div id="ls_find_dbs" class="menu_button" data-ls-i18n="findDbs">рџ”Ќ РќР°Р№С‚Рё Р±Р°Р·С‹ РїРѕ РЅР°Р·РІР°РЅРёСЋ</div>
+                <div id="ls_create_dbs" class="menu_button" data-ls-i18n="create">Создать недостающие базы</div>
+                <div id="ls_find_dbs" class="menu_button" data-ls-i18n="findDbs">🔍 Найти базы по названию</div>
             </div>
 
             <label class="checkbox_label">
                 <input id="ls_upload_avatars" type="checkbox" checked>
-                <span data-ls-i18n="uploadAvatars">Р·Р°РіСЂСѓР¶Р°С‚СЊ Р°РІР°С‚Р°СЂС‹ РІ РєР°СЂС‚РѕС‡РєРё Notion</span>
+                <span data-ls-i18n="uploadAvatars">загружать аватары в карточки Notion</span>
             </label>
 
-            <label for="ls_parent_page" class="ls-mini-label" data-ls-i18n="parentLabel">ID СЃС‚СЂР°РЅРёС†С‹ Notion РґР»СЏ РЅРѕРІС‹С… Р±Р°Р· (РЅРµРѕР±СЏР·Р°С‚РµР»СЊРЅРѕ)</label>
+            <label for="ls_parent_page" class="ls-mini-label" data-ls-i18n="parentLabel">ID страницы Notion для новых баз (необязательно)</label>
             <input id="ls_parent_page" type="text" class="text_pole" placeholder="page id"
                    data-ls-i18n-placeholder="parentPlaceholder">
 
-            <div class="ls-section-title" data-ls-i18n="databases">Р‘Р°Р·С‹ Notion</div>
+            <div class="ls-section-title" data-ls-i18n="databases">Базы Notion</div>
 
             <div class="ls-cat">
                 <div class="ls-cat-head">
-                    <span data-ls-i18n="lorebooks">рџ“љ Р›РѕСЂР±СѓРєРё</span>
+                    <span data-ls-i18n="lorebooks">📚 Лорбуки</span>
                     <div class="menu_button ls-sync-btn" data-cat="lorebooks">Sync</div>
                 </div>
                 <input id="ls_db_lorebooks" data-dbcat="lorebooks" type="text" class="text_pole" placeholder="database id">
                 <label class="checkbox_label">
                     <input id="ls_include_empty" type="checkbox">
-                    <span data-ls-i18n="includeEmpty">РІРєР»СЋС‡Р°С‚СЊ РїСѓСЃС‚С‹Рµ Р»РѕСЂР±СѓРєРё</span>
+                    <span data-ls-i18n="includeEmpty">включать пустые лорбуки</span>
                 </label>
             </div>
 
             <div class="ls-cat">
                 <div class="ls-cat-head">
-                    <span data-ls-i18n="characters">рџЋ­ РџРµСЂСЃРѕРЅР°Р¶Рё</span>
+                    <span data-ls-i18n="characters">🎭 Персонажи</span>
                     <div class="menu_button ls-sync-btn" data-cat="characters">Sync</div>
                 </div>
                 <input id="ls_db_characters" data-dbcat="characters" type="text" class="text_pole" placeholder="database id">
@@ -67,7 +67,7 @@
 
             <div class="ls-cat">
                 <div class="ls-cat-head">
-                    <span data-ls-i18n="personas">рџ§‘ РџРµСЂСЃРѕРЅС‹</span>
+                    <span data-ls-i18n="personas">🧑 Персоны</span>
                     <div class="menu_button ls-sync-btn" data-cat="personas">Sync</div>
                 </div>
                 <input id="ls_db_personas" data-dbcat="personas" type="text" class="text_pole" placeholder="database id">
@@ -75,37 +75,37 @@
 
             <div class="ls-cat">
                 <div class="ls-cat-head">
-                    <span data-ls-i18n="chats">рџ’¬ Р§Р°С‚С‹</span>
+                    <span data-ls-i18n="chats">💬 Чаты</span>
                     <div class="menu_button ls-sync-btn" data-cat="chats">Sync</div>
                 </div>
                 <input id="ls_db_chats" data-dbcat="chats" type="text" class="text_pole" placeholder="database id">
                 <div class="ls-row ls-nums">
                     <label class="ls-num">
-                        <span data-ls-i18n="chatLimit">С‡Р°С‚РѕРІ РЅР° РїРµСЂСЃРѕРЅР°Р¶Р°</span>
+                        <span data-ls-i18n="chatLimit">чатов на персонажа</span>
                         <input id="ls_chat_limit" class="text_pole" type="number" min="1" max="100">
                     </label>
                     <label class="ls-num">
-                        <span data-ls-i18n="msgLimit">СЃРѕРѕР±С‰РµРЅРёР№ РІ С‡Р°С‚Рµ</span>
+                        <span data-ls-i18n="msgLimit">сообщений в чате</span>
                         <input id="ls_msg_limit" class="text_pole" type="number" min="1" max="5000">
                     </label>
                 </div>
                 <label class="checkbox_label">
                     <input id="ls_rewrite_chats" type="checkbox">
-                    <span data-ls-i18n="rewriteChats">РїРµСЂРµР·Р°РїРёСЃС‹РІР°С‚СЊ С‡Р°С‚С‹ С†РµР»РёРєРѕРј</span>
+                    <span data-ls-i18n="rewriteChats">перезаписывать чаты целиком</span>
                 </label>
             </div>
 
             <div class="ls-cat">
                 <div class="ls-cat-head">
-                    <span data-ls-i18n="autoTitle">рџ¤– РђРІС‚Рѕ-СЃРёРЅС…СЂРѕРЅРёР·Р°С†РёСЏ</span>
+                    <span data-ls-i18n="autoTitle">🤖 Авто-синхронизация</span>
                 </div>
                 <label class="checkbox_label">
                     <input id="ls_auto_sync" type="checkbox">
-                    <span data-ls-i18n="autoEnable">Р°РІС‚Рѕ-СЃРёРЅС…СЂРѕРЅРёР·Р°С†РёСЏ Р°РєС‚РёРІРЅРѕРіРѕ С‡Р°С‚Р°</span>
+                    <span data-ls-i18n="autoEnable">авто-синхронизация активного чата</span>
                 </label>
                 <div class="ls-row ls-nums">
                     <label class="ls-num">
-                        <span data-ls-i18n="autoEvery">РєР°Р¶РґС‹Рµ N СЃРѕРѕР±С‰РµРЅРёР№</span>
+                        <span data-ls-i18n="autoEvery">каждые N сообщений</span>
                         <input id="ls_auto_every" class="text_pole" type="number" min="1" max="1000">
                     </label>
                 </div>
@@ -115,28 +115,28 @@
 
             <div class="ls-cat">
                 <div class="ls-cat-head">
-                    <span data-ls-i18n="importTitle">в¬‡ РРјРїРѕСЂС‚ РёР· Notion</span>
+                    <span data-ls-i18n="importTitle">⬇ Импорт из Notion</span>
                 </div>
                 <label class="checkbox_label">
                     <input id="ls_import_overwrite" type="checkbox">
-                    <span data-ls-i18n="importOverwrite">РїРµСЂРµР·Р°РїРёСЃС‹РІР°С‚СЊ СЃСѓС‰РµСЃС‚РІСѓСЋС‰РµРµ</span>
+                    <span data-ls-i18n="importOverwrite">перезаписывать существующее</span>
                 </label>
                 <div class="ls-actions">
-                    <div id="ls_restore_lorebooks" class="menu_button" data-ls-i18n="restoreLorebooks">Р’РѕСЃСЃС‚Р°РЅРѕРІРёС‚СЊ Р»РѕСЂР±СѓРєРё</div>
-                    <div id="ls_restore_characters" class="menu_button" data-ls-i18n="restoreCharacters">Р’РѕСЃСЃС‚Р°РЅРѕРІРёС‚СЊ РїРµСЂСЃРѕРЅР°Р¶РµР№</div>
+                    <div id="ls_restore_lorebooks" class="menu_button" data-ls-i18n="restoreLorebooks">Восстановить лорбуки</div>
+                    <div id="ls_restore_characters" class="menu_button" data-ls-i18n="restoreCharacters">Восстановить персонажей</div>
                 </div>
             </div>
 
             <div class="ls-cat">
                 <div class="ls-cat-head">
-                    <span data-ls-i18n="exportTitle">рџ“¦ Р­РєСЃРїРѕСЂС‚ РІ Markdown (Obsidian)</span>
+                    <span data-ls-i18n="exportTitle">📦 Экспорт в Markdown (Obsidian)</span>
                 </div>
                 <label class="checkbox_label">
                     <input id="ls_export_chats" type="checkbox">
-                    <span data-ls-i18n="exportChats">РІРєР»СЋС‡Р°С‚СЊ С‡Р°С‚С‹ (РјРѕР¶РµС‚ Р±С‹С‚СЊ РґРѕР»РіРѕ)</span>
+                    <span data-ls-i18n="exportChats">включать чаты (может быть долго)</span>
                 </label>
                 <div class="ls-actions">
-                    <div id="ls_export_md" class="menu_button" data-ls-i18n="exportButton">РЎРєР°С‡Р°С‚СЊ .md Р°СЂС…РёРІ</div>
+                    <div id="ls_export_md" class="menu_button" data-ls-i18n="exportButton">Скачать .md архив</div>
                 </div>
             </div>
 
