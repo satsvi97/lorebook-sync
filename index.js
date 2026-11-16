@@ -9,7 +9,7 @@ import { extension_settings, getContext } from '../../../extensions.js';
 import { getRequestHeaders, eventSource, event_types } from '../../../../script.js';
 
 const MODULE_NAME = 'lorebook-sync';
-const EXT_VERSION = '0.6.0';
+const EXT_VERSION = '0.6.1';
 
 console.info('Lorebook Sync v' + EXT_VERSION + ' loaded');
 const NOTION_API = 'https://api.notion.com/v1';
@@ -870,7 +870,7 @@ async function syncLorebooks() {
             const existing = await findPageByTitle(settings.lorebooksDb, book.name);
             if (existing) {
                 const marker = readMarker(existing);
-                if (marker && marker.kind === 'lorebook' && marker.hash === signature) {
+                if (marker && marker.kind === 'lorebook' && marker.hash === signature && marker.snap === '1') {
                     setStatus('— ' + book.name + ': без изменений', 'muted');
                     skipped++;
                     continue;
@@ -879,7 +879,7 @@ async function syncLorebooks() {
 
             const pageId = await upsertPage(settings.lorebooksDb, book.name, blocks);
             await appendBlocks(pageId, [snapshotBlock('lorebook', { name: book.name, entries })]);
-            await writeMarker(pageId, { kind: 'lorebook', hash: signature });
+            await writeMarker(pageId, { kind: 'lorebook', hash: signature, snap: 1 });
             setStatus('— ' + book.name + ': ' + count + ' записей', 'ok');
             ok++;
         } catch (err) {
@@ -911,7 +911,7 @@ async function syncCharacters() {
             const existing = await findPageByTitle(settings.charactersDb, name);
             if (existing) {
                 const marker = readMarker(existing);
-                if (marker && marker.kind === 'character' && marker.hash === signature) {
+                if (marker && marker.kind === 'character' && marker.hash === signature && marker.snap === '1') {
                     setStatus('— ' + name + ': без изменений', 'muted');
                     skipped++;
                     continue;
@@ -924,7 +924,7 @@ async function syncCharacters() {
                 fields[field] = character[field] == null ? '' : character[field];
             }
             await appendBlocks(pageId, [snapshotBlock('character', { name, fields })]);
-            await writeMarker(pageId, { kind: 'character', hash: signature });
+            await writeMarker(pageId, { kind: 'character', hash: signature, snap: 1 });
             setStatus('— ' + name + ': обновлён', 'ok');
             ok++;
         } catch (err) {
