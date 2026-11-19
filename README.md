@@ -1,4 +1,5 @@
-# Lorebook Sync (в разработке)
+# ✦ Lorebook Sync ✦
+ 
 
 Расширение для **SillyTavern**: синхронизация данных Таверны в базы **Notion**.
 
